@@ -36,6 +36,7 @@ assert.throws(
 for (const text of [
   "I want 8 minutes warmup, then 4 alterations of high intensity and low intensity and then 8 minutes cooldown",
   "8 minutes warmup, 6 alterating 1 minute rest / work. then 8 minutes cooldown",
+  "8 minute warmup, 8 minutes cooldown. 4 one minute intervals work/rest in the middle (1 minute each)",
   "5 one minute timers and one 30 second",
 ]) {
   const messages = buildTinyLlmMessages({
@@ -54,6 +55,9 @@ for (const text of [
   assert.equal("currentWorkoutShape" in payload, false, `${text}: should not expose currentWorkoutShape`);
   assert.equal("conversation" in payload, false, `${text}: should not expose conversation`);
   assert.match(messages[0].content, /Do not copy prior or default timers/);
+  assert.match(messages[0].content, /8 minutes is 480/);
+  assert.match(messages[0].content, /Never use 8 for an 8-minute timer/);
+  assert.match(messages[0].content, /Warmup 480, Work 60, Rest 60, Work 60, Rest 60, Cooldown 480/);
 }
 
 const correctionMessages = buildTinyLlmMessages({

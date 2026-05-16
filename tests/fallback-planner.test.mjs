@@ -87,6 +87,29 @@ assert.deepEqual(
   [60, 60, 60, 60, 60, 30],
 );
 
+const middleIntervalsWithDurations = planWithFallback(
+  "8 minute warmup, 8 minutes cooldown. 4 one minute intervals work/rest in the middle (1 minute each)",
+  [],
+);
+assert.deepEqual(summarize(middleIntervalsWithDurations), {
+  count: 6,
+  totalSeconds: 1200,
+  warmups: 1,
+  cooldowns: 1,
+  work: 2,
+  rest: 2,
+  workSeconds: [60],
+  restSeconds: [60],
+});
+assert.deepEqual(
+  middleIntervalsWithDurations.timers.map((timer) => timer.kind),
+  ["warmup", "work", "rest", "work", "rest", "cooldown"],
+);
+assert.deepEqual(
+  middleIntervalsWithDurations.timers.map((timer) => timer.seconds),
+  [480, 60, 60, 60, 60, 480],
+);
+
 const correction = planWithFallback(
   "the alterating blocks shoudl be of 1 minute",
   poorlyArticulated.timers.map((timer) => ({

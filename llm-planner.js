@@ -145,6 +145,8 @@ export function buildTinyLlmMessages({
         "For a new standalone timer list, create exactly the requested timers as kind other; do not copy currentTimers. Example: '5 one minute timers and one 30 second' means five 60-second timers plus one 30-second timer.",
         "If the user says N alternating blocks of 1 minute rest and 1 minute work, create N rest intervals and N work intervals between warmup and cooldown.",
         "Duration wording near cycles, blocks, or 'each' usually applies to every middle interval, not to the number of cycles.",
+        "durationSeconds is always elapsed seconds: 8 minutes is 480, 1 minute is 60, 30 seconds is 30. Never use 8 for an 8-minute timer or 4 for four one-minute intervals.",
+        "Example: '8 minute warmup, 8 minutes cooldown. 4 one minute intervals work/rest in the middle (1 minute each)' means Warmup 480, Work 60, Rest 60, Work 60, Rest 60, Cooldown 480.",
       ].join(" "),
     },
     {

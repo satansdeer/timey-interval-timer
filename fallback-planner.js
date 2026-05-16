@@ -80,7 +80,7 @@ export function planWithFallback(text, currentTimers = [], conversation = []) {
   const timers = [];
 
   if (explicitGenericTimers.length) {
-    timers.push(...explicitGenericTimers);
+    return { timers: explicitGenericTimers.slice(0, MAX_INTERVALS), source: "fallback" };
   }
 
   if (warmupSeconds && (explicitWarmup || (correction && currentWarmup))) {
@@ -422,6 +422,11 @@ function extractTotalIntervals(text) {
 }
 
 function extractMiddleIntervalCount(text) {
+  const countDurationBeforeUnitMatch = new RegExp(
+    `(?:exactly\\s+)?(\\d+)\\s+${durationPattern()}\\s+(?:steps?|intervals?|timers?)`,
+  ).exec(text);
+  if (countDurationBeforeUnitMatch) return clampInteger(countDurationBeforeUnitMatch[1], 1, MAX_INTERVALS);
+
   const directMatch = text.match(/(?:exactly\s+)?(\d+)\s*(?:steps?|intervals?|timers?)/);
   if (directMatch) return clampInteger(directMatch[1], 1, MAX_INTERVALS);
 
@@ -441,6 +446,7 @@ function durationNearAlternatingUnit(text) {
   const unitPattern = "(?:steps?|intervals?|timers?|blocks?|rounds?|cycles?|sets?|alternations?|alterations?)";
   const patterns = [
     new RegExp(`\\beach\\s+${unitPattern}\\s+(?:should\\s+be\\s+|is\\s+|are\\s+|lasts?\\s+|for\\s+)?${durationPattern()}`),
+    new RegExp(`\\b\\d+\\s+${durationPattern()}\\s+${unitPattern}`),
     new RegExp(`\\b${unitPattern}\\s+(?:each\\s+|should\\s+be\\s+|are\\s+|of\\s+|for\\s+)?${durationPattern()}`),
     new RegExp(`${durationPattern()}\\s+per\\s+${unitPattern}`),
   ];
