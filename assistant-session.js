@@ -4,6 +4,7 @@ import { planTimers as planTimersWithPlanner } from "./planner.js";
 export const ASSISTANT_NAME = "Timmy";
 export const ASSISTANT_CONVERSATION_VERSION = 3;
 export const ASSISTANT_MAX_LOG_MESSAGES = 24;
+export const SHARE_SEQUENCE_QUERY_PARAM = "sequence";
 export const INITIAL_ASSISTANT_TEXT =
   "Tell me your warmup, intervals, rests, and cooldown. I will schedule the workout.";
 export const INITIAL_ASSISTANT_BUBBLE_TEXT = "Ask Timmy to set up your timers.";
@@ -70,6 +71,34 @@ export function normalizeTimers(input) {
       return createTimer(label || KIND_META[kind].label, seconds, kind);
     })
     .filter((timer) => timer.seconds > 0);
+}
+
+export function encodeTimerSequence(timers) {
+  const normalizedTimers = normalizeTimers(timers);
+  if (!normalizedTimers.length) throw new Error("No timers to share.");
+  const payload = {
+    v: 1,
+    timers: normalizedTimers.map(({ label, seconds, kind }) => [label, seconds, kind]),
+  };
+  return encodeBase64Url(JSON.stringify(payload));
+}
+
+export function decodeTimerSequence(value) {
+  if (!value) return [];
+
+  try {
+    const payload = JSON.parse(decodeBase64Url(String(value)));
+    if (payload?.v !== 1 || !Array.isArray(payload.timers)) return [];
+    return normalizeTimers(
+      payload.timers.map((timer) => {
+        if (!Array.isArray(timer)) return timer;
+        const [label, seconds, kind] = timer;
+        return { label, seconds, kind };
+      }),
+    );
+  } catch {
+    return [];
+  }
 }
 
 export async function submitAssistantText({
@@ -269,6 +298,23 @@ function hashText(text) {
 
 function pad2(value) {
   return String(value).padStart(2, "0");
+}
+
+function encodeBase64Url(text) {
+  const bytes = new TextEncoder().encode(text);
+  let binary = "";
+  for (const byte of bytes) {
+    binary += String.fromCharCode(byte);
+  }
+  return btoa(binary).replaceAll("+", "-").replaceAll("/", "_").replace(/=+$/, "");
+}
+
+function decodeBase64Url(value) {
+  const base64 = value.replaceAll("-", "+").replaceAll("_", "/");
+  const paddedBase64 = base64.padEnd(Math.ceil(base64.length / 4) * 4, "=");
+  const binary = atob(paddedBase64);
+  const bytes = Uint8Array.from(binary, (character) => character.charCodeAt(0));
+  return new TextDecoder().decode(bytes);
 }
 
 function clampInteger(value, min, max) {

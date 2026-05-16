@@ -12,13 +12,16 @@ import {
   INITIAL_ASSISTANT_BUBBLE_TEXT,
   createAssistantReply,
   createTimer,
+  decodeTimerSequence,
   defaultState,
+  encodeTimerSequence,
   formatClock,
   formatConversationForCopy,
   getElapsedMs as getSessionElapsedMs,
   getTotalMs as getSessionTotalMs,
   normalizePlayer,
   normalizeTimers,
+  SHARE_SEQUENCE_QUERY_PARAM,
   snapshotElapsedBeforeSequenceChange as snapshotSessionElapsedBeforeSequenceChange,
   submitAssistantText,
 } from "./assistant-session.js";
@@ -39,6 +42,7 @@ const MODEL_ASSET_KEY = "timey-model-asset-key-v1";
 const elements = {
   saveState: document.querySelector("#saveState"),
   installButton: document.querySelector("#installButton"),
+  shareWorkoutButton: document.querySelector("#shareWorkoutButton"),
   resetDataButton: document.querySelector("#resetDataButton"),
   currentTitle: document.querySelector("#currentTitle"),
   nextTitle: document.querySelector("#nextTitle"),
@@ -79,6 +83,7 @@ const elements = {
 
 const kindMeta = KIND_META;
 
+let initialShareStatus = null;
 let state = loadState();
 let deferredInstallPrompt = null;
 let lastRenderedSegmentIndex = null;
@@ -95,11 +100,21 @@ function init() {
   registerServiceWorker();
   detectAssistantMode();
   maybeOfferTinyLlm();
+  if (initialShareStatus) persist();
   renderAll();
   window.setInterval(renderPlayer, 250);
 }
 
 function loadState() {
+  const sharedTimers = getSharedTimersFromUrl();
+  if (sharedTimers.length) {
+    initialShareStatus = "Loaded shared workout";
+    return {
+      ...defaultState(),
+      timers: sharedTimers,
+    };
+  }
+
   try {
     const raw = localStorage.getItem(STORAGE_KEY) || localStorage.getItem(LEGACY_STORAGE_KEY);
     if (!raw) return defaultState();
@@ -124,12 +139,55 @@ function loadState() {
 function persist() {
   localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
   localStorage.removeItem(LEGACY_STORAGE_KEY);
-  elements.saveState.textContent = "Saved locally";
+  elements.saveState.textContent = initialShareStatus || "Saved locally";
+  initialShareStatus = null;
 }
 
 function markDirty() {
   elements.saveState.textContent = "Saving...";
   persist();
+  syncSharedUrlIfPresent();
+}
+
+function getSharedTimersFromUrl() {
+  try {
+    const url = new URL(window.location.href);
+    return decodeTimerSequence(url.searchParams.get(SHARE_SEQUENCE_QUERY_PARAM));
+  } catch {
+    return [];
+  }
+}
+
+function createShareUrl() {
+  const url = new URL(window.location.href);
+  url.searchParams.set(SHARE_SEQUENCE_QUERY_PARAM, encodeTimerSequence(state.timers));
+  return url.toString();
+}
+
+function syncSharedUrlIfPresent() {
+  try {
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has(SHARE_SEQUENCE_QUERY_PARAM)) return;
+    url.searchParams.set(SHARE_SEQUENCE_QUERY_PARAM, encodeTimerSequence(state.timers));
+    replaceUrl(url.toString());
+  } catch {
+    // URL sharing should not block timer edits or playback controls.
+  }
+}
+
+function removeSharedSequenceFromUrl() {
+  try {
+    const url = new URL(window.location.href);
+    if (!url.searchParams.has(SHARE_SEQUENCE_QUERY_PARAM)) return;
+    url.searchParams.delete(SHARE_SEQUENCE_QUERY_PARAM);
+    replaceUrl(url.toString());
+  } catch {
+    // Reset still works if the History API is unavailable.
+  }
+}
+
+function replaceUrl(url) {
+  window.history.replaceState(null, "", url);
 }
 
 function bindEvents() {
@@ -138,6 +196,7 @@ function bindEvents() {
   elements.previousButton.addEventListener("click", previousInterval);
   elements.nextButton.addEventListener("click", nextInterval);
   elements.addIntervalButton.addEventListener("click", addInterval);
+  elements.shareWorkoutButton.addEventListener("click", handleShareWorkout);
   elements.resetDataButton.addEventListener("click", resetData);
   elements.intervalList.addEventListener("change", handleIntervalInput);
   elements.intervalList.addEventListener("click", handleIntervalAction);
@@ -290,8 +349,45 @@ function resetData() {
   localStorage.removeItem(MODEL_ASSET_KEY);
   localStorage.removeItem(LEGACY_MODEL_CHOICE_KEY);
   lastRenderedSegmentIndex = null;
+  removeSharedSequenceFromUrl();
   persist();
   renderAll();
+}
+
+async function handleShareWorkout() {
+  const originalLabel = elements.shareWorkoutButton.textContent;
+  const shareUrl = createShareUrl();
+  replaceUrl(shareUrl);
+
+  try {
+    if (navigator.share) {
+      await navigator.share({
+        title: "Timey workout",
+        text: "Timey workout sequence",
+        url: shareUrl,
+      });
+      elements.shareWorkoutButton.textContent = "Shared";
+      elements.saveState.textContent = "Share complete";
+    } else {
+      await copyText(shareUrl);
+      elements.shareWorkoutButton.textContent = "Copied";
+      elements.saveState.textContent = "Share link copied";
+    }
+  } catch (error) {
+    if (error?.name === "AbortError") return;
+    try {
+      await copyText(shareUrl);
+      elements.shareWorkoutButton.textContent = "Copied";
+      elements.saveState.textContent = "Share link copied";
+    } catch {
+      elements.shareWorkoutButton.textContent = "Share failed";
+      elements.saveState.textContent = "Could not copy share link";
+    }
+  } finally {
+    window.setTimeout(() => {
+      elements.shareWorkoutButton.textContent = originalLabel;
+    }, 1400);
+  }
 }
 
 function handleIntervalInput(event) {

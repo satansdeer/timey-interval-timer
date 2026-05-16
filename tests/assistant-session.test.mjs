@@ -1,11 +1,26 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import { resolve } from "node:path";
-import { defaultState, submitAssistantText } from "../assistant-session.js";
+import {
+  decodeTimerSequence,
+  defaultState,
+  encodeTimerSequence,
+  submitAssistantText,
+} from "../assistant-session.js";
 
 const fixtures = JSON.parse(
   await readFile(resolve("tests/assistant-dialog-fixtures.json"), "utf8"),
 );
+
+const shareTimers = [
+  { label: "Warmup", seconds: 300, kind: "warmup" },
+  { label: "Work <hard>", seconds: 45, kind: "work" },
+  { label: "Rest & reset", seconds: 30, kind: "rest" },
+];
+const encodedSequence = encodeTimerSequence(shareTimers);
+assert.match(encodedSequence, /^[A-Za-z0-9_-]+$/);
+assert.deepEqual(summarizeForShare(decodeTimerSequence(encodedSequence)), shareTimers);
+assert.deepEqual(decodeTimerSequence("not-a-valid-sequence"), []);
 
 for (const fixture of fixtures) {
   const state = defaultState();
@@ -40,6 +55,10 @@ function summarizeTimers(timers) {
 
 function uniqueSeconds(timers, kind) {
   return [...new Set(timers.filter((timer) => timer.kind === kind).map((timer) => timer.seconds))];
+}
+
+function summarizeForShare(timers) {
+  return timers.map(({ label, seconds, kind }) => ({ label, seconds, kind }));
 }
 
 function assertExpectation(actual, expected, label) {
