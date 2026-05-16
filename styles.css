@@ -16,6 +16,7 @@
   --display: #000000;
   --display-text: #00ff66;
   --danger: #800000;
+  --win-scrollbar-size: 17px;
   font-family: "MS Sans Serif", Tahoma, "Segoe UI", Arial, sans-serif;
 }
 
@@ -87,6 +88,87 @@ textarea {
   padding: 3px 5px;
 }
 
+.tab-strip,
+.interval-list,
+.assistant-form textarea {
+  scrollbar-color: var(--face) var(--face);
+  scrollbar-width: auto;
+}
+
+.tab-strip::-webkit-scrollbar,
+.interval-list::-webkit-scrollbar,
+.assistant-form textarea::-webkit-scrollbar {
+  background: var(--face);
+  height: var(--win-scrollbar-size);
+  width: var(--win-scrollbar-size);
+}
+
+.tab-strip::-webkit-scrollbar-thumb,
+.interval-list::-webkit-scrollbar-thumb,
+.assistant-form textarea::-webkit-scrollbar-thumb {
+  background: var(--face);
+  border: 2px solid;
+  border-color: var(--highlight) var(--dark-shadow) var(--dark-shadow) var(--highlight);
+  min-height: 28px;
+}
+
+.tab-strip::-webkit-scrollbar-track,
+.interval-list::-webkit-scrollbar-track,
+.assistant-form textarea::-webkit-scrollbar-track {
+  background: var(--face);
+  border: 1px solid;
+  border-color: var(--shadow) var(--highlight) var(--highlight) var(--shadow);
+}
+
+.tab-strip::-webkit-scrollbar-corner,
+.interval-list::-webkit-scrollbar-corner,
+.assistant-form textarea::-webkit-scrollbar-corner {
+  background: var(--face);
+}
+
+.tab-strip::-webkit-scrollbar-button:single-button,
+.interval-list::-webkit-scrollbar-button:single-button,
+.assistant-form textarea::-webkit-scrollbar-button:single-button {
+  background-color: var(--face);
+  background-position: center;
+  background-repeat: no-repeat;
+  border: 2px solid;
+  border-color: var(--highlight) var(--dark-shadow) var(--dark-shadow) var(--highlight);
+  display: block;
+  height: var(--win-scrollbar-size);
+  width: var(--win-scrollbar-size);
+}
+
+.tab-strip::-webkit-scrollbar-button:single-button:active,
+.interval-list::-webkit-scrollbar-button:single-button:active,
+.assistant-form textarea::-webkit-scrollbar-button:single-button:active {
+  border-color: var(--dark-shadow) var(--highlight) var(--highlight) var(--dark-shadow);
+}
+
+.tab-strip::-webkit-scrollbar-button:horizontal:decrement,
+.interval-list::-webkit-scrollbar-button:horizontal:decrement,
+.assistant-form textarea::-webkit-scrollbar-button:horizontal:decrement {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='17' height='17' viewBox='0 0 17 17'%3E%3Cpath d='M5 8.5 10 4v9z' fill='black'/%3E%3C/svg%3E");
+}
+
+.tab-strip::-webkit-scrollbar-button:horizontal:increment,
+.interval-list::-webkit-scrollbar-button:horizontal:increment,
+.assistant-form textarea::-webkit-scrollbar-button:horizontal:increment {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='17' height='17' viewBox='0 0 17 17'%3E%3Cpath d='M7 4l5 4.5L7 13z' fill='black'/%3E%3C/svg%3E");
+}
+
+.tab-strip::-webkit-scrollbar-button:vertical:decrement,
+.interval-list::-webkit-scrollbar-button:vertical:decrement,
+.assistant-form textarea::-webkit-scrollbar-button:vertical:decrement {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='17' height='17' viewBox='0 0 17 17'%3E%3Cpath d='M8.5 5 4 10h9z' fill='black'/%3E%3C/svg%3E");
+}
+
+.tab-strip::-webkit-scrollbar-button:vertical:increment,
+.interval-list::-webkit-scrollbar-button:vertical:increment,
+.assistant-form textarea::-webkit-scrollbar-button:vertical:increment {
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='17' height='17' viewBox='0 0 17 17'%3E%3Cpath d='M4 7h9l-4.5 5z' fill='black'/%3E%3C/svg%3E");
+}
+
 h1,
 h2 {
   margin: 0;
@@ -123,6 +205,7 @@ h2 {
   max-width: none;
   min-height: 100vh;
   min-width: 0;
+  overflow: hidden;
   padding: 2px;
   width: 100%;
 }
@@ -265,7 +348,10 @@ h2 {
   background: var(--face);
   border: 2px solid;
   border-color: var(--shadow) var(--dark-shadow) var(--dark-shadow) var(--highlight);
+  display: grid;
+  grid-template-rows: minmax(0, 1fr);
   min-height: 0;
+  overflow: hidden;
   padding: 12px;
 }
 
@@ -290,7 +376,9 @@ h2 {
   display: grid;
   gap: 10px;
   grid-template-rows: auto minmax(0, 1fr);
-  min-height: 520px;
+  height: 100%;
+  min-height: 0;
+  overflow: hidden;
 }
 
 .timer-meta,
@@ -573,17 +661,23 @@ h2 {
   display: grid;
   gap: 10px;
   grid-template-rows: minmax(0, 1fr) auto;
+  height: 100%;
   min-height: 0;
+  overflow: hidden;
 }
 
 .interval-list {
+  align-self: start;
   background: var(--field);
   border: 2px solid;
   border-color: var(--dark-shadow) var(--highlight) var(--highlight) var(--dark-shadow);
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
+  max-height: min(268px, 100%);
   min-height: 0;
+  overscroll-behavior: contain;
   overflow: auto;
+  scrollbar-gutter: stable;
 }
 
 .listview-header,
