@@ -55,9 +55,12 @@ const elements = {
   previousButton: document.querySelector("#previousButton"),
   nextButton: document.querySelector("#nextButton"),
   timeline: document.querySelector("#timeline"),
+  segmentedRing: document.querySelector("#segmentedRing"),
   sequenceSummary: document.querySelector("#sequenceSummary"),
   addIntervalButton: document.querySelector("#addIntervalButton"),
   intervalList: document.querySelector("#intervalList"),
+  intervalProperties: document.querySelector("#intervalProperties"),
+  sequenceActionButtons: Array.from(document.querySelectorAll("[data-selected-action]")),
   assistantWidget: document.querySelector("#assistantWidget"),
   assistantPopover: document.querySelector("#assistantPopover"),
   assistantToggleButton: document.querySelector("#assistantToggleButton"),
@@ -82,9 +85,11 @@ const elements = {
 };
 
 const kindMeta = KIND_META;
+const RING_SEGMENT_COUNT = 48;
 
 let initialShareStatus = null;
 let state = loadState();
+let selectedTimerId = state.timers[0]?.id || null;
 let deferredInstallPrompt = null;
 let lastRenderedSegmentIndex = null;
 let audioContext = null;
@@ -198,8 +203,12 @@ function bindEvents() {
   elements.addIntervalButton.addEventListener("click", addInterval);
   elements.shareWorkoutButton.addEventListener("click", handleShareWorkout);
   elements.resetDataButton.addEventListener("click", resetData);
-  elements.intervalList.addEventListener("change", handleIntervalInput);
-  elements.intervalList.addEventListener("click", handleIntervalAction);
+  elements.intervalList.addEventListener("click", handleIntervalSelection);
+  elements.intervalList.addEventListener("keydown", handleIntervalListKeydown);
+  elements.intervalProperties.addEventListener("change", handleIntervalInput);
+  elements.sequenceActionButtons.forEach((button) => {
+    button.addEventListener("click", handleSelectedIntervalAction);
+  });
   elements.assistantToggleButton.addEventListener("click", toggleAssistantPopover);
   elements.assistantCloseButton.addEventListener("click", closeAssistantPopover);
   elements.assistantForm.addEventListener("submit", handleAssistantSubmit);
@@ -333,7 +342,9 @@ function seekToSegment(index) {
 
 function addInterval() {
   snapshotElapsedBeforeSequenceChange();
-  state.timers.push(createTimer("Work", 60, "work"));
+  const timer = createTimer("Work", 60, "work");
+  state.timers.push(timer);
+  selectedTimerId = timer.id;
   markDirty();
   renderAll();
 }
@@ -349,6 +360,7 @@ function resetData() {
   localStorage.removeItem(MODEL_ASSET_KEY);
   localStorage.removeItem(LEGACY_MODEL_CHOICE_KEY);
   lastRenderedSegmentIndex = null;
+  selectedTimerId = state.timers[0]?.id || null;
   removeSharedSequenceFromUrl();
   persist();
   renderAll();
@@ -391,9 +403,7 @@ async function handleShareWorkout() {
 }
 
 function handleIntervalInput(event) {
-  const card = event.target.closest("[data-id]");
-  if (!card) return;
-  const timer = state.timers.find((item) => item.id === card.dataset.id);
+  const timer = getSelectedTimer();
   if (!timer) return;
 
   snapshotElapsedBeforeSequenceChange();
@@ -404,8 +414,8 @@ function handleIntervalInput(event) {
   }
 
   if (event.target.matches("[data-field='minutes'], [data-field='seconds']")) {
-    const minutes = Number(card.querySelector("[data-field='minutes']").value) || 0;
-    const seconds = Number(card.querySelector("[data-field='seconds']").value) || 0;
+    const minutes = Number(elements.intervalProperties.querySelector("[data-field='minutes']").value) || 0;
+    const seconds = Number(elements.intervalProperties.querySelector("[data-field='seconds']").value) || 0;
     timer.seconds = clampInteger(minutes * 60 + seconds, 1, 86400);
   }
 
@@ -413,30 +423,61 @@ function handleIntervalInput(event) {
   renderAll();
 }
 
-function handleIntervalAction(event) {
-  const button = event.target.closest("button[data-action]");
-  if (!button) return;
-  const card = button.closest("[data-id]");
-  const index = state.timers.findIndex((item) => item.id === card?.dataset.id);
+function handleIntervalSelection(event) {
+  const row = event.target.closest("[data-id]");
+  if (!row) return;
+  selectedTimerId = row.dataset.id;
+  renderIntervals();
+}
+
+function handleIntervalListKeydown(event) {
+  if (!["ArrowUp", "ArrowDown", "Home", "End", "Enter"].includes(event.key)) return;
+  const index = getSelectedTimerIndex();
+  if (index < 0) return;
+
+  if (event.key === "Enter") {
+    event.preventDefault();
+    elements.intervalProperties.querySelector("[data-field='label']")?.focus();
+    return;
+  }
+
+  event.preventDefault();
+  let nextIndex = index;
+  if (event.key === "ArrowUp") nextIndex = Math.max(0, index - 1);
+  if (event.key === "ArrowDown") nextIndex = Math.min(state.timers.length - 1, index + 1);
+  if (event.key === "Home") nextIndex = 0;
+  if (event.key === "End") nextIndex = state.timers.length - 1;
+
+  selectedTimerId = state.timers[nextIndex]?.id || selectedTimerId;
+  renderIntervals();
+  elements.intervalList.querySelector(`[data-id="${CSS.escape(selectedTimerId)}"]`)?.focus();
+}
+
+function handleSelectedIntervalAction(event) {
+  const action = event.currentTarget.dataset.selectedAction;
+  const index = getSelectedTimerIndex();
   if (index < 0) return;
 
   snapshotElapsedBeforeSequenceChange();
 
-  if (button.dataset.action === "up" && index > 0) {
+  if (action === "up" && index > 0) {
     [state.timers[index - 1], state.timers[index]] = [state.timers[index], state.timers[index - 1]];
   }
 
-  if (button.dataset.action === "down" && index < state.timers.length - 1) {
+  if (action === "down" && index < state.timers.length - 1) {
     [state.timers[index + 1], state.timers[index]] = [state.timers[index], state.timers[index + 1]];
   }
 
-  if (button.dataset.action === "duplicate") {
+  if (action === "duplicate") {
     const timer = state.timers[index];
-    state.timers.splice(index + 1, 0, createTimer(`${timer.label} copy`, timer.seconds, timer.kind));
+    const copy = createTimer(`${timer.label} copy`, timer.seconds, timer.kind);
+    state.timers.splice(index + 1, 0, copy);
+    selectedTimerId = copy.id;
   }
 
-  if (button.dataset.action === "delete" && state.timers.length > 1) {
+  if (action === "delete" && state.timers.length > 1) {
     state.timers.splice(index, 1);
+    selectedTimerId = state.timers[Math.min(index, state.timers.length - 1)]?.id || null;
   }
 
   markDirty();
@@ -725,8 +766,9 @@ function renderPlayer() {
   elements.timerDial.style.setProperty("--dial-color", color);
   elements.timerDial.style.setProperty("--dial-progress", `${Math.min(1, segmentProgress) * 360}deg`);
   elements.timerDial.style.setProperty("--dial-progress-percent", `${Math.min(1, segmentProgress) * 100}%`);
+  renderSegmentedRing(segmentProgress, color);
 
-  renderTimeline(location.index);
+  renderTimeline(location.index, elapsedMs, totalMs);
 
   if (
     state.player.status === "running" &&
@@ -740,48 +782,121 @@ function renderPlayer() {
 }
 
 function renderIntervals() {
+  const selectedIndex = ensureSelectedTimer();
   elements.sequenceSummary.textContent = `${state.timers.length} interval${
     state.timers.length === 1 ? "" : "s"
   }`;
 
-  elements.intervalList.innerHTML = state.timers
-    .map((timer, index) => {
-      const minutes = Math.floor(timer.seconds / 60);
-      const seconds = timer.seconds % 60;
-      const kind = kindMeta[timer.kind] || kindMeta.other;
-      return `
-        <article class="interval-card" data-id="${escapeHtml(timer.id)}" style="--kind-color: ${kind.color}">
-          <div class="interval-topline">
-            <label class="field-label">
-              Label
-              <input data-field="label" value="${escapeHtml(timer.label)}" />
-            </label>
-          </div>
-          <div class="interval-duration">
-            <label class="field-label">
-              Minutes
-              <input data-field="minutes" type="number" min="0" max="1440" step="1" value="${minutes}" />
-            </label>
-            <label class="field-label">
-              Seconds
-              <input data-field="seconds" type="number" min="0" max="59" step="1" value="${seconds}" />
-            </label>
-          </div>
-          <div class="interval-actions">
-            <button class="mini-button" data-action="up" type="button" ${index === 0 ? "disabled" : ""}>Up</button>
-            <button class="mini-button" data-action="down" type="button" ${
-              index === state.timers.length - 1 ? "disabled" : ""
-            }>Down</button>
-            <button class="mini-button" data-action="duplicate" type="button">Copy</button>
-            <button class="mini-button" data-action="delete" type="button" ${
-              state.timers.length === 1 ? "disabled" : ""
-            }>Delete</button>
-          </div>
-        </article>
-      `;
-    })
-    .join("");
+  elements.intervalList.innerHTML = `
+    <div class="listview-header" role="row">
+      <div class="listview-cell listview-number">#</div>
+      <div class="listview-cell">Label</div>
+      <div class="listview-cell">Duration</div>
+      <div class="listview-cell">Kind</div>
+    </div>
+    <div class="listview-body" role="grid" aria-rowcount="${state.timers.length}">
+      ${state.timers
+        .map((timer, index) => {
+          const kind = kindMeta[timer.kind] || kindMeta.other;
+          const isSelected = index === selectedIndex;
+          return `
+            <div
+              class="listview-row ${isSelected ? "selected" : ""}"
+              data-id="${escapeHtml(timer.id)}"
+              role="row"
+              aria-selected="${isSelected}"
+              tabindex="${isSelected ? "0" : "-1"}"
+              style="--kind-color: ${kind.color}"
+            >
+              <div class="listview-cell listview-number">${index + 1}</div>
+              <div class="listview-cell listview-label">
+                <span class="kind-swatch" aria-hidden="true"></span>
+                <span>${escapeHtml(timer.label)}</span>
+              </div>
+              <div class="listview-cell">${formatDurationLabel(timer.seconds)}</div>
+              <div class="listview-cell">${escapeHtml(kind.label)}</div>
+            </div>
+          `;
+        })
+        .join("")}
+    </div>
+  `;
 
+  renderIntervalProperties(selectedIndex);
+  updateSequenceActionControls(selectedIndex);
+}
+
+function renderIntervalProperties(selectedIndex) {
+  const timer = state.timers[selectedIndex];
+  if (!timer) {
+    elements.intervalProperties.innerHTML = "";
+    return;
+  }
+
+  const minutes = Math.floor(timer.seconds / 60);
+  const seconds = timer.seconds % 60;
+  const kind = kindMeta[timer.kind] || kindMeta.other;
+  elements.intervalProperties.innerHTML = `
+    <fieldset class="property-group">
+      <legend>Interval properties</legend>
+      <div class="property-grid">
+        <label class="field-label property-label">
+          Label
+          <input data-field="label" value="${escapeHtml(timer.label)}" />
+        </label>
+        <label class="field-label numeric-field">
+          Minutes
+          <input data-field="minutes" type="number" min="0" max="1440" step="1" value="${minutes}" />
+        </label>
+        <label class="field-label numeric-field">
+          Seconds
+          <input data-field="seconds" type="number" min="0" max="59" step="1" value="${seconds}" />
+        </label>
+        <div class="field-label kind-readout">
+          Kind
+          <div class="kind-value" style="--kind-color: ${kind.color}">
+            <span class="kind-swatch" aria-hidden="true"></span>
+            <span>${escapeHtml(kind.label)}</span>
+          </div>
+        </div>
+      </div>
+    </fieldset>
+  `;
+}
+
+function updateSequenceActionControls(selectedIndex) {
+  elements.sequenceActionButtons.forEach((button) => {
+    const action = button.dataset.selectedAction;
+    button.disabled =
+      selectedIndex < 0 ||
+      (action === "up" && selectedIndex === 0) ||
+      (action === "down" && selectedIndex === state.timers.length - 1) ||
+      (action === "delete" && state.timers.length === 1);
+  });
+}
+
+function ensureSelectedTimer() {
+  let index = getSelectedTimerIndex();
+  if (index >= 0) return index;
+  selectedTimerId = state.timers[0]?.id || null;
+  index = getSelectedTimerIndex();
+  return index;
+}
+
+function getSelectedTimerIndex() {
+  return state.timers.findIndex((timer) => timer.id === selectedTimerId);
+}
+
+function getSelectedTimer() {
+  return state.timers[getSelectedTimerIndex()] || null;
+}
+
+function formatDurationLabel(totalSeconds) {
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  if (!seconds) return `${minutes} min`;
+  if (!minutes) return `${seconds} sec`;
+  return `${minutes} min ${seconds} sec`;
 }
 
 function updateStartPauseControl() {
@@ -803,18 +918,33 @@ function updateStartPauseControl() {
   elements.startPauseButton.title = label;
 }
 
-function renderTimeline(activeIndex) {
+function renderSegmentedRing(segmentProgress, color) {
+  const filledSegments = Math.round(clampNumber(segmentProgress, 0, 1) * RING_SEGMENT_COUNT);
+  elements.segmentedRing.innerHTML = Array.from({ length: RING_SEGMENT_COUNT }, (_, index) => {
+    const isFilled = index < filledSegments;
+    return `<span class="ring-segment ${isFilled ? "filled" : ""}" style="--ring-index: ${index}; --ring-color: ${color}"></span>`;
+  }).join("");
+}
+
+function renderTimeline(activeIndex, elapsedMs, totalMs) {
   const totalSeconds = Math.max(1, state.timers.reduce((total, timer) => total + timer.seconds, 0));
+  let cursorSeconds = 0;
+  const elapsedSeconds = elapsedMs / 1000;
+  const playheadLeft = totalMs > 0 ? clampNumber(elapsedMs / totalMs, 0, 1) * 100 : 0;
   elements.timeline.innerHTML = state.timers
     .map((timer, index) => {
       const color = kindMeta[timer.kind]?.color || kindMeta.other.color;
+      const progress = clampNumber((elapsedSeconds - cursorSeconds) / timer.seconds, 0, 1);
+      cursorSeconds += timer.seconds;
       return `<div class="timeline-segment ${
         index === activeIndex ? "active" : ""
       }" title="${escapeHtml(timer.label)}" style="--segment-flex: ${
         timer.seconds / totalSeconds
-      }; --segment-color: ${color}"></div>`;
+      }; --segment-color: ${color}; --segment-progress: ${progress * 100}%">
+        <div class="timeline-segment-fill"></div>
+      </div>`;
     })
-    .join("");
+    .join("") + `<div class="timeline-playhead" style="left: ${playheadLeft}%"></div>`;
 }
 
 function renderAssistantBubble() {

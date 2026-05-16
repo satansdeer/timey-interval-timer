@@ -77,9 +77,12 @@
               </div>
 
               <div class="timer-dial" id="timerDial" role="timer" aria-live="polite">
-                <div class="timer-pretime" id="timerElapsed">Elapsed 00:00</div>
-                <div class="timer-time" id="timerTime">00:00</div>
-                <div class="timer-subtime" id="timerSubtime">00:00 total</div>
+                <div class="segmented-ring" id="segmentedRing" aria-hidden="true"></div>
+                <div class="timer-readout">
+                  <div class="timer-pretime" id="timerElapsed">Elapsed 00:00</div>
+                  <div class="timer-time" id="timerTime">00:00</div>
+                  <div class="timer-subtime" id="timerSubtime">00:00 total</div>
+                </div>
               </div>
 
               <div class="player-controls" aria-label="Playback controls">
@@ -160,9 +163,22 @@
                   <span class="eyebrow">Sequence</span>
                   <h2 id="sequenceSummary">0 intervals</h2>
                 </div>
-                <button class="solid-button" id="addIntervalButton" type="button">Add</button>
+                <div class="sequence-actions" aria-label="Sequence commands">
+                  <button class="solid-button" id="addIntervalButton" type="button">Add...</button>
+                  <button class="mini-button" data-selected-action="up" type="button">Move Up</button>
+                  <button class="mini-button" data-selected-action="down" type="button">Move Down</button>
+                  <button class="mini-button" data-selected-action="duplicate" type="button">Duplicate</button>
+                  <button class="mini-button" data-selected-action="delete" type="button">Delete</button>
+                </div>
               </div>
-              <div class="interval-list" id="intervalList"></div>
+              <div class="sequence-layout">
+                <div class="interval-list" id="intervalList" aria-label="Interval sequence"></div>
+                <section
+                  class="interval-properties"
+                  id="intervalProperties"
+                  aria-label="Selected interval properties"
+                ></section>
+              </div>
             </section>
           </div>
         </div>

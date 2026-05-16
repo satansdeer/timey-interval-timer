@@ -292,7 +292,7 @@ h2 {
 .timer-surface {
   display: grid;
   gap: 12px;
-  grid-template-rows: auto minmax(190px, auto) auto minmax(42px, 1fr);
+  grid-template-rows: auto minmax(280px, auto) auto minmax(42px, 1fr);
   min-height: 520px;
 }
 
@@ -320,6 +320,14 @@ h2 {
   align-items: center;
   grid-template-columns: minmax(0, 1fr) auto;
   padding: 2px 4px 4px;
+}
+
+.sequence-actions {
+  align-items: center;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px;
+  justify-content: flex-end;
 }
 
 .timer-meta > div {
@@ -350,23 +358,59 @@ h2 {
 
 .timer-dial {
   --dial-progress-percent: 0%;
-  align-content: center;
-  background:
-    linear-gradient(
-      90deg,
-      rgba(0, 128, 128, 0.5) 0 var(--dial-progress-percent),
-      var(--display) var(--dial-progress-percent) 100%
-    );
+  align-items: center;
+  background: var(--display);
   border: 2px solid;
   border-color: var(--dark-shadow) var(--highlight) var(--highlight) var(--dark-shadow);
   color: var(--display-text);
   display: grid;
-  gap: 8px;
   justify-items: center;
-  min-height: 230px;
+  min-height: 300px;
   padding: 20px;
+  position: relative;
   transition: background 160ms linear;
   width: 100%;
+}
+
+.segmented-ring {
+  --ring-size: min(260px, calc(100vw - 96px));
+  --ring-radius: calc(var(--ring-size) / 2 - 12px);
+  height: var(--ring-size);
+  left: 50%;
+  pointer-events: none;
+  position: absolute;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  width: var(--ring-size);
+}
+
+.ring-segment {
+  background: #1a1a1a;
+  border: 1px solid;
+  border-color: #404040 #000000 #000000 #404040;
+  height: 16px;
+  left: 50%;
+  position: absolute;
+  top: 50%;
+  transform:
+    translate(-50%, -50%)
+    rotate(calc(var(--ring-index) * 7.5deg))
+    translateY(calc(-1 * var(--ring-radius)));
+  transform-origin: center;
+  width: 8px;
+}
+
+.ring-segment.filled {
+  background: var(--ring-color, var(--display-text));
+  border-color: var(--highlight) var(--dark-shadow) var(--dark-shadow) var(--highlight);
+}
+
+.timer-readout {
+  display: grid;
+  gap: 8px;
+  justify-items: center;
+  position: relative;
+  z-index: 1;
 }
 
 .timer-time {
@@ -474,6 +518,7 @@ h2 {
   min-height: 34px;
   overflow: hidden;
   padding: 3px;
+  position: relative;
 }
 
 .timeline-segment {
@@ -481,66 +526,196 @@ h2 {
   border: 1px solid var(--shadow);
   flex: var(--segment-flex, 1) 1 18px;
   min-width: 10px;
-  opacity: 0.55;
+  overflow: hidden;
   position: relative;
 }
 
+.timeline-segment::after {
+  background: rgba(255, 255, 255, 0.58);
+  bottom: 0;
+  content: "";
+  left: 0;
+  position: absolute;
+  right: 0;
+  top: 0;
+  z-index: 1;
+}
+
+.timeline-segment-fill {
+  background: var(--segment-color, var(--desktop));
+  bottom: 0;
+  left: 0;
+  position: absolute;
+  top: 0;
+  width: var(--segment-progress, 0%);
+  z-index: 2;
+}
+
 .timeline-segment.active {
-  opacity: 1;
   outline: 2px solid var(--text);
   outline-offset: -3px;
 }
 
+.timeline-playhead {
+  background: var(--text);
+  border-left: 1px solid var(--highlight);
+  border-right: 1px solid var(--dark-shadow);
+  bottom: 1px;
+  position: absolute;
+  top: 1px;
+  transform: translateX(-1px);
+  width: 3px;
+  z-index: 5;
+}
+
+.timeline-playhead::before {
+  border-left: 5px solid transparent;
+  border-right: 5px solid transparent;
+  border-top: 6px solid var(--text);
+  content: "";
+  left: 50%;
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+}
+
+.sequence-layout {
+  display: grid;
+  gap: 10px;
+  grid-template-rows: minmax(0, 1fr) auto;
+  min-height: 0;
+}
+
 .interval-list {
-  align-content: start;
   background: var(--field);
   border: 2px solid;
   border-color: var(--dark-shadow) var(--highlight) var(--highlight) var(--dark-shadow);
   display: grid;
-  gap: 8px;
+  grid-template-rows: auto minmax(0, 1fr);
   min-height: 0;
   overflow: auto;
-  padding: 8px;
 }
 
-.interval-card {
+.listview-header,
+.listview-row {
+  display: grid;
+  grid-template-columns: 48px minmax(190px, 1fr) 120px 120px;
+}
+
+.listview-header {
   background: var(--face);
-  border: 2px solid;
-  border-color: var(--highlight) var(--dark-shadow) var(--dark-shadow) var(--highlight);
-  box-shadow: inset 5px 0 0 var(--kind-color, var(--desktop));
-  display: grid;
-  gap: 8px;
-  grid-template-columns: minmax(180px, 1fr) minmax(220px, 0.8fr) auto;
-  padding: 8px 8px 8px 14px;
+  border-bottom: 1px solid var(--shadow);
+  color: var(--window-text);
+  min-width: 480px;
+  position: sticky;
+  top: 0;
+  z-index: 2;
 }
 
-.interval-topline {
+.listview-header .listview-cell {
+  border: 1px solid;
+  border-color: var(--highlight) var(--shadow) var(--shadow) var(--highlight);
+  min-height: 22px;
+}
+
+.listview-body {
+  align-content: start;
   display: grid;
-  gap: 8px;
+  min-width: 480px;
+}
+
+.listview-row {
+  background: var(--field);
+  color: var(--window-text);
+  min-height: 24px;
+}
+
+.listview-row:focus-visible {
+  outline: 1px dotted var(--text);
+  outline-offset: -3px;
+}
+
+.listview-row.selected {
+  background: var(--title);
+  color: var(--highlight);
+}
+
+.listview-cell {
+  align-items: center;
+  border-right: 1px solid #e0e0e0;
+  display: flex;
+  gap: 6px;
+  min-width: 0;
+  overflow: hidden;
+  padding: 2px 7px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.listview-number {
+  justify-content: flex-end;
+}
+
+.listview-label span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.kind-swatch {
+  background: var(--kind-color, var(--desktop));
+  border: 1px solid;
+  border-color: var(--dark-shadow) var(--highlight) var(--highlight) var(--dark-shadow);
+  flex: 0 0 auto;
+  height: 12px;
+  width: 12px;
+}
+
+.listview-row.selected .kind-swatch {
+  border-color: var(--highlight);
+}
+
+.interval-properties {
   min-width: 0;
 }
 
-.interval-duration {
-  display: grid;
-  gap: 8px;
-  grid-template-columns: 1fr 1fr;
-  min-width: 0;
+.property-group {
+  border: 2px groove var(--highlight);
+  margin: 0;
+  padding: 8px 10px 10px;
 }
 
-.interval-actions {
+.property-group legend {
+  padding: 0 4px;
+}
+
+.property-grid {
   align-items: end;
   display: grid;
-  gap: 5px;
-  grid-template-columns: repeat(4, 58px);
+  gap: 8px;
+  grid-template-columns: minmax(180px, 1fr) 96px 96px minmax(120px, auto);
 }
 
-.interval-card input,
-.interval-card select,
+.property-label,
+.numeric-field,
+.kind-readout {
+  min-width: 0;
+}
+
+.kind-value {
+  align-items: center;
+  display: flex;
+  gap: 6px;
+  min-height: 25px;
+  padding: 3px 0;
+}
+
+.interval-properties input,
 .assistant-form textarea {
   width: 100%;
 }
 
-.interval-card input[type="number"] {
+.interval-properties input[type="number"] {
   font-variant-numeric: tabular-nums;
 }
 
@@ -873,6 +1048,10 @@ h2 {
     grid-template-columns: 1fr;
   }
 
+  .sequence-actions {
+    justify-content: flex-start;
+  }
+
   .timer-meta {
     gap: 10px;
     grid-template-columns: minmax(0, 1fr) minmax(96px, 40%);
@@ -883,21 +1062,39 @@ h2 {
   }
 
   .timer-dial {
-    min-height: 190px;
+    min-height: 250px;
     padding: 14px;
+  }
+
+  .segmented-ring {
+    --ring-size: min(210px, calc(100vw - 72px));
   }
 
   .timer-time {
     font-size: 44px;
   }
 
-  .interval-card,
-  .interval-duration {
-    grid-template-columns: 1fr;
+  .property-grid {
+    grid-template-columns: 1fr 76px 76px;
   }
 
-  .interval-actions {
-    grid-template-columns: repeat(2, minmax(0, 1fr));
+  .kind-readout {
+    grid-column: 1 / -1;
+  }
+
+  .listview-header,
+  .listview-row {
+    grid-template-columns: 34px minmax(98px, 1fr) 76px 78px;
+    min-width: 0;
+  }
+
+  .listview-body {
+    min-width: 0;
+  }
+
+  .listview-cell {
+    padding-left: 4px;
+    padding-right: 4px;
   }
 
   .status-bar {
