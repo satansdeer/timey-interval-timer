@@ -226,7 +226,7 @@ h2 {
   align-items: flex-end;
   display: flex;
   margin-bottom: -2px;
-  min-height: 29px;
+  min-height: 27px;
   overflow-x: auto;
   padding-left: 0;
 }
@@ -238,26 +238,27 @@ h2 {
   border-color: var(--highlight) var(--dark-shadow) transparent var(--highlight);
   flex: 0 0 auto;
   margin-right: -1px;
-  min-height: 27px;
-  padding: 5px 15px 5px;
+  min-height: 26px;
+  padding: 4px 13px 3px;
   position: relative;
   top: 0;
   z-index: 2;
 }
 
 .tab-button:not(.active) {
+  border-bottom: 2px solid var(--shadow);
   border-color: var(--highlight) var(--dark-shadow) var(--shadow) var(--highlight);
   color: #303030;
   min-height: 24px;
-  padding: 3px 14px 4px;
-  top: 4px;
+  padding: 2px 12px 2px;
+  top: 2px;
   z-index: 1;
 }
 
 .tab-button.active {
   border-bottom: 0;
   border-color: var(--highlight) var(--dark-shadow) transparent var(--highlight);
-  padding: 5px 15px 5px;
+  padding: 4px 13px 3px;
   z-index: 4;
 }
 
@@ -274,7 +275,7 @@ h2 {
 .tab-frame {
   background: var(--face);
   border: 2px solid;
-  border-color: var(--highlight) var(--dark-shadow) var(--dark-shadow) var(--highlight);
+  border-color: var(--shadow) var(--dark-shadow) var(--dark-shadow) var(--highlight);
   min-height: 0;
   padding: 12px;
 }
