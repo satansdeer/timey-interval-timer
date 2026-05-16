@@ -385,9 +385,9 @@ h2 {
 }
 
 .ring-segment {
-  background: #1a1a1a;
+  background: var(--face-light);
   border: 1px solid;
-  border-color: #404040 #000000 #000000 #404040;
+  border-color: var(--highlight) var(--shadow) var(--shadow) var(--highlight);
   height: 16px;
   left: 50%;
   position: absolute;

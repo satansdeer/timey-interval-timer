@@ -1,5 +1,5 @@
 const APP_CACHE_PREFIX = "timey-app-";
-const CACHE_NAME = `${APP_CACHE_PREFIX}v26`;
+const CACHE_NAME = `${APP_CACHE_PREFIX}v27`;
 const LEGACY_APP_CACHE_PATTERN = /^timey-v\d+$/;
 const ASSETS = [
   "./",
