@@ -73,6 +73,8 @@ const elements = {
   modelProgressFill: document.querySelector("#modelProgressFill"),
   loadModelButton: document.querySelector("#loadModelButton"),
   useFallbackButton: document.querySelector("#useFallbackButton"),
+  tabButtons: Array.from(document.querySelectorAll("[data-tab-target]")),
+  tabPanels: Array.from(document.querySelectorAll("[data-tab-panel]")),
 };
 
 const kindMeta = KIND_META;
@@ -147,6 +149,10 @@ function bindEvents() {
   elements.copyConversationButton.addEventListener("click", handleCopyConversation);
   elements.loadModelButton.addEventListener("click", handleLoadModelClick);
   elements.useFallbackButton.addEventListener("click", handleUseFallbackClick);
+  elements.tabButtons.forEach((button) => {
+    button.addEventListener("click", () => activateTab(button.dataset.tabTarget));
+    button.addEventListener("keydown", handleTabKeydown);
+  });
 
   document.addEventListener("keydown", handleGlobalKeydown);
 
@@ -170,6 +176,41 @@ function bindEvents() {
     deferredInstallPrompt = null;
     elements.installButton.hidden = true;
   });
+}
+
+function activateTab(panelId, shouldFocus = false) {
+  const activeButton = elements.tabButtons.find((button) => button.dataset.tabTarget === panelId);
+  if (!activeButton) return;
+
+  elements.tabButtons.forEach((button) => {
+    const isActive = button === activeButton;
+    button.classList.toggle("active", isActive);
+    button.setAttribute("aria-selected", String(isActive));
+    button.tabIndex = isActive ? 0 : -1;
+  });
+
+  elements.tabPanels.forEach((panel) => {
+    panel.hidden = panel.id !== panelId;
+  });
+
+  if (shouldFocus) activeButton.focus();
+}
+
+function handleTabKeydown(event) {
+  const navigationKeys = ["ArrowLeft", "ArrowRight", "Home", "End"];
+  if (!navigationKeys.includes(event.key)) return;
+
+  event.preventDefault();
+  const currentIndex = elements.tabButtons.indexOf(event.currentTarget);
+  const lastIndex = elements.tabButtons.length - 1;
+  let nextIndex = currentIndex;
+
+  if (event.key === "ArrowLeft") nextIndex = currentIndex <= 0 ? lastIndex : currentIndex - 1;
+  if (event.key === "ArrowRight") nextIndex = currentIndex >= lastIndex ? 0 : currentIndex + 1;
+  if (event.key === "Home") nextIndex = 0;
+  if (event.key === "End") nextIndex = lastIndex;
+
+  activateTab(elements.tabButtons[nextIndex].dataset.tabTarget, true);
 }
 
 function toggleStartPause() {
@@ -587,6 +628,7 @@ function renderPlayer() {
   const color = kindMeta[currentTimer.kind]?.color || kindMeta.other.color;
   elements.timerDial.style.setProperty("--dial-color", color);
   elements.timerDial.style.setProperty("--dial-progress", `${Math.min(1, segmentProgress) * 360}deg`);
+  elements.timerDial.style.setProperty("--dial-progress-percent", `${Math.min(1, segmentProgress) * 100}%`);
 
   renderTimeline(location.index);
 
