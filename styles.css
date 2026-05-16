@@ -730,10 +730,10 @@ h2 {
   display: flex;
   gap: 10px;
   justify-content: flex-end;
-  max-width: min(560px, calc(100vw - 32px));
+  max-width: min(520px, calc(100vw - 48px));
   pointer-events: none;
   position: fixed;
-  right: 20px;
+  right: 24px;
   z-index: 15;
 }
 
@@ -744,8 +744,8 @@ h2 {
   box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.38);
   display: grid;
   gap: 10px;
-  max-width: min(390px, calc(100vw - 112px));
-  min-width: min(340px, calc(100vw - 112px));
+  max-width: min(340px, calc(100vw - 132px));
+  min-width: min(300px, calc(100vw - 132px));
   padding: 14px;
   pointer-events: auto;
   position: relative;
@@ -890,10 +890,21 @@ h2 {
 }
 
 .assistant-copy-button {
+  background: transparent;
+  border: 0;
   color: var(--window-text);
   font-size: 12px;
   min-height: 25px;
-  padding: 2px 8px;
+  padding: 2px 0;
+  text-decoration: underline;
+}
+
+.assistant-copy-button:active {
+  padding: 3px 0 1px;
+}
+
+.assistant-copy-button:focus-visible {
+  outline-offset: 2px;
 }
 
 .assistant-actions .solid-button {
@@ -1068,14 +1079,14 @@ h2 {
 
   .assistant-widget {
     bottom: 12px;
-    left: 12px;
-    max-width: none;
-    right: 12px;
+    left: 20px;
+    max-width: calc(100vw - 40px);
+    right: 20px;
   }
 
   .assistant-bubble {
-    flex: 1 1 auto;
-    max-width: none;
+    flex: 1 1 0;
+    max-width: calc(100vw - 112px);
     min-width: 0;
   }
 
