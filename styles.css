@@ -234,6 +234,16 @@ h2 {
   z-index: 1;
 }
 
+.tab-button:not(.active)::after {
+  background: var(--shadow);
+  bottom: -2px;
+  content: "";
+  height: 2px;
+  left: 0;
+  position: absolute;
+  right: 0;
+}
+
 .tab-button.active {
   border-bottom: 0;
   border-color: var(--highlight) var(--dark-shadow) transparent var(--highlight);
