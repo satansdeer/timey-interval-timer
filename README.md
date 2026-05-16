@@ -22,6 +22,14 @@ Then open `http://localhost:5173`.
 node tests/run.mjs
 ```
 
+Run the browser cache regression test:
+
+```sh
+npm install
+npx playwright install chromium
+npm run test:browser
+```
+
 Run the console assistant harness against dialog fixtures:
 
 ```sh
@@ -78,5 +86,7 @@ The tiny LLM path pins WebLLM to `@mlc-ai/web-llm@0.2.83`, tries `Qwen2-0.5B-Ins
 ## Update Caching
 
 The service worker owns only `timey-app-*` caches and uses network-first responses for same-origin app files. It deliberately ignores cross-origin WebLLM/model requests and preserves non-Timey Cache Storage entries so model assets survive ordinary app deploys.
+
+The browser cache regression test simulates a UI deploy by upgrading the service worker from one app cache version to another. It seeds a separate fake WebLLM/model cache first, then verifies the old UI cache is removed, the new UI cache is installed, and the model cache entry is still available without a network download.
 
 The model should return only validated timer JSON. UI state is changed only after schema validation and timer normalization.

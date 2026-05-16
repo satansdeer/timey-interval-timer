@@ -17,6 +17,8 @@ dist/
 build/
 coverage/
 .nyc_output/
+playwright-report/
+test-results/
 
 # Logs
 *.log

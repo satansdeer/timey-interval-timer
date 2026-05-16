@@ -1,0 +1,13 @@
+{
+  "name": "timey-interval-timer",
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "start": "python3 -m http.server 5173",
+    "test": "node tests/run.mjs",
+    "test:browser": "playwright test tests/browser/cache-separation.spec.mjs"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.60.0"
+  }
+}
