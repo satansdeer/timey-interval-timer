@@ -676,7 +676,8 @@ h2 {
   max-height: min(268px, 100%);
   min-height: 0;
   overscroll-behavior: contain;
-  overflow: auto;
+  overflow-x: auto;
+  overflow-y: auto;
   scrollbar-gutter: stable;
 }
 
