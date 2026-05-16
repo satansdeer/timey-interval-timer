@@ -17,11 +17,6 @@
             <span class="window-icon" aria-hidden="true">TY</span>
             <h1>Timey - Timer Studio</h1>
           </div>
-          <div class="window-controls" aria-hidden="true">
-            <span class="titlebar-button">-</span>
-            <span class="titlebar-button">[]</span>
-            <span class="titlebar-button">X</span>
-          </div>
         </header>
 
         <div class="menu-bar" aria-label="Application actions">
@@ -183,10 +178,7 @@
           </div>
         </div>
 
-        <footer class="status-bar" aria-label="Status">
-          <div class="status-cell save-state" id="saveState">Saved locally</div>
-          <div class="status-cell">Local timer data</div>
-        </footer>
+        <div class="save-state sr-only" id="saveState" aria-live="polite">Saved locally</div>
       </main>
 
       <div class="assistant-widget" id="assistantWidget">
