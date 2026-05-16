@@ -53,11 +53,12 @@ export function planWithFallback(text, currentTimers = [], conversation = []) {
     60;
   const restSeconds =
     (shouldPreferUnitDuration ? unitDuration : null) ??
-    durationNearLabel(normalized, ["rest", "recovery", "easy"], 18) ??
+    durationNearLabel(normalized, ["low intensity", "rest", "recovery", "easy"], 18) ??
     unitDuration ??
     sharedDuration ??
     currentRest?.seconds ??
     60;
+  const explicitGenericTimers = extractExplicitGenericTimers(normalized);
 
   let cycles = extractCycles(normalized);
   const totalIntervals = extractTotalIntervals(normalized);
@@ -77,6 +78,10 @@ export function planWithFallback(text, currentTimers = [], conversation = []) {
   }
 
   const timers = [];
+
+  if (explicitGenericTimers.length) {
+    timers.push(...explicitGenericTimers);
+  }
 
   if (warmupSeconds && (explicitWarmup || (correction && currentWarmup))) {
     timers.push(makeTimer(currentWarmup?.label || "Warmup", warmupSeconds, "warmup"));
@@ -189,7 +194,14 @@ export function inferKind(label) {
   if (value.includes("warmdown") || value.includes("warm down")) return "cooldown";
   if (value.includes("warm")) return "warmup";
   if (value.includes("cool")) return "cooldown";
-  if (value.includes("rest") || value.includes("recover")) return "rest";
+  if (
+    value.includes("low intensity") ||
+    value.includes("rest") ||
+    value.includes("recover") ||
+    value.includes("easy")
+  ) {
+    return "rest";
+  }
   if (value.includes("work") || value.includes("intensity") || value.includes("hard")) return "work";
   return "other";
 }
@@ -257,21 +269,38 @@ function replaceNumberWords(text) {
   };
   return String(text).replace(
     /\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|sixteen|first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\b/gi,
-    (match) => String(numberWords[match.toLowerCase()]),
+    (match, _word, offset, fullText) => {
+      if (match.toLowerCase() === "second" && hasDurationAmountBefore(fullText, offset)) {
+        return match;
+      }
+      return String(numberWords[match.toLowerCase()]);
+    },
+  );
+}
+
+function hasDurationAmountBefore(text, offset) {
+  const before = text.slice(Math.max(0, offset - 24), offset).toLowerCase();
+  return /(?:\d+(?:\.\d+)?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|sixteen)\s+$/.test(
+    before,
   );
 }
 
 function mentionsWorkAndRest(text) {
-  return (
-    (text.includes("rest") || text.includes("recovery")) &&
-    (text.includes("intensity") || text.includes("work") || text.includes("hard"))
-  );
+  return mentionsRestLike(text) && mentionsWorkLike(text);
 }
 
 function mentionsAlternating(text) {
-  return /(alternating|alterating|alternate|blocks?|rounds?|cycles?|steps?|sets?|middle|middle ones)/.test(
+  return /(alternating|alterating|alternate|alternations?|alterations?|blocks?|rounds?|cycles?|steps?|sets?|middle|middle ones)/.test(
     text,
   );
+}
+
+function mentionsRestLike(text) {
+  return /\b(rest|recovery|easy|low intensity)\b/.test(text);
+}
+
+function mentionsWorkLike(text) {
+  return /\b(high intensity|work|hard)\b/.test(text) || /\bintensity\b/.test(text.replaceAll("low intensity", ""));
 }
 
 function findHistoricalWorkoutPrompt(currentText, conversation) {
@@ -307,17 +336,17 @@ function hasAlternatingSection(timers) {
 }
 
 function getAlternatingOrder(text) {
-  const restFirst = /(rest|recovery|easy)\s*(?:\/|and|then|,)\s*(?:high intensity|intensity|work|hard)/.test(
+  const restFirst = /(low intensity|rest|recovery|easy)\s*(?:\/|and|then|,)\s*(?:high intensity|intensity|work|hard)/.test(
     text,
   );
   if (restFirst) return ["rest", "work"];
 
-  const workFirst = /(?:high intensity|intensity|work|hard)\s*(?:\/|and|then|,)\s*(rest|recovery|easy)/.test(
+  const workFirst = /(?:high intensity|intensity|work|hard)\s*(?:\/|and|then|,)\s*(low intensity|rest|recovery|easy)/.test(
     text,
   );
   if (workFirst) return ["work", "rest"];
 
-  const restIndex = text.search(/\b(rest|recovery|easy)\b/);
+  const restIndex = text.search(/\b(low intensity|rest|recovery|easy)\b/);
   const workIndex = text.search(/\b(high intensity|intensity|work|hard)\b/);
   if (restIndex >= 0 && workIndex >= 0) {
     return restIndex < workIndex ? ["rest", "work"] : ["work", "rest"];
@@ -351,11 +380,40 @@ function getCycleScale(text) {
 }
 
 function extractCycles(text) {
-  const labeledMatch = text.match(/(\d+)\s*(?:rounds?|cycles?|blocks?|sets?)/);
+  const labeledMatch = text.match(/(\d+)\s*(?:rounds?|cycles?|blocks?|sets?|alternations?|alterations?)/);
   if (labeledMatch) return clampInteger(labeledMatch[1], 1, MAX_INTERVALS / 2);
 
   const genericAlternatingMatch = text.match(/(\d+)\s*(?:alternating|alterating|alternate)\b/);
   return genericAlternatingMatch ? clampInteger(genericAlternatingMatch[1], 1, MAX_INTERVALS / 2) : null;
+}
+
+function extractExplicitGenericTimers(text) {
+  if (!/\b(?:timers?|intervals?)\b/.test(text)) return [];
+  if (
+    mentionsAlternating(text) ||
+    mentionsRestLike(text) ||
+    mentionsWorkLike(text) ||
+    hasEndpointLabel(text)
+  ) {
+    return [];
+  }
+
+  const timers = [];
+  const countedDurationPattern = new RegExp(
+    `\\b(\\d+)\\s+${durationPattern()}\\s*(?:timers?|intervals?)?`,
+    "g",
+  );
+
+  for (const match of text.matchAll(countedDurationPattern)) {
+    const count = clampInteger(match[1], 1, MAX_INTERVALS - timers.length);
+    const seconds = durationFromMatch([match[0], match[2], match[3]]);
+    if (!seconds) continue;
+    for (let index = 0; index < count && timers.length < MAX_INTERVALS; index += 1) {
+      timers.push(makeTimer("Timer", seconds, "other"));
+    }
+  }
+
+  return timers;
 }
 
 function extractTotalIntervals(text) {
@@ -380,7 +438,7 @@ function extractEachCount(text) {
 }
 
 function durationNearAlternatingUnit(text) {
-  const unitPattern = "(?:steps?|intervals?|timers?|blocks?|rounds?|cycles?|sets?)";
+  const unitPattern = "(?:steps?|intervals?|timers?|blocks?|rounds?|cycles?|sets?|alternations?|alterations?)";
   const patterns = [
     new RegExp(`\\beach\\s+${unitPattern}\\s+(?:should\\s+be\\s+|is\\s+|are\\s+|lasts?\\s+|for\\s+)?${durationPattern()}`),
     new RegExp(`\\b${unitPattern}\\s+(?:each\\s+|should\\s+be\\s+|are\\s+|of\\s+|for\\s+)?${durationPattern()}`),
@@ -467,6 +525,10 @@ function isDurationBridge(bridge, maxDistance, allowEndpointBridge = false) {
   return /^(?:cycles?|blocks?|steps?|intervals?|timers?|each|per|of|for|\/|and|\s|-)+$/.test(
     normalized,
   );
+}
+
+function hasEndpointLabel(text) {
+  return /\b(warmup|warm up|cooldown|cool down|warmdown|warm down)\b/.test(text);
 }
 
 function firstUsefulDuration(text) {

@@ -19,10 +19,12 @@ Then open `http://localhost:5173`.
 ## Tests
 
 ```sh
-node tests/run.mjs
+npm test
+npm run test:fallback
+npm run test:llm
 ```
 
-Run the browser cache regression test:
+Run browser regression tests:
 
 ```sh
 npm install
@@ -75,9 +77,9 @@ That means closing the page, reopening it, sleeping the device, or going offline
 The assistant uses a planner stack:
 
 - `assistant-session.js` is the shared DOM-free session layer used by both the web UI and console harness.
-- `llm-planner.js` tries WebLLM in the browser through WebGPU.
-- `planner.js` passes the current timers, recent conversation, and compact `currentWorkoutShape`.
-- `fallback-planner.js` is the deterministic fallback for unsupported browsers, failed model loads, or invalid model output.
+- `llm-planner.js` tries WebLLM in the browser through WebGPU and only sends prior timer state for correction requests.
+- `planner.js` chooses the LLM path when the model is loaded, otherwise the deterministic backup.
+- `fallback-planner.js` is the deterministic backup for unsupported browsers or failed model loads. Successful LLM output is not semantically replaced by the fallback parser; LLM behavior is tested separately so prompt and harness regressions stay visible.
 
 On page load, the app checks WebGPU support. Supported browsers get a one-time choice to load the local model; that preference is stored in `localStorage`. Unsupported browsers use the fallback parser without prompting.
 

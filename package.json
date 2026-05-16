@@ -5,6 +5,8 @@
   "scripts": {
     "start": "python3 -m http.server 5173",
     "test": "node tests/run.mjs",
+    "test:fallback": "node tests/run-fallback.mjs",
+    "test:llm": "node tests/run-llm.mjs",
     "test:browser": "playwright test tests/browser/cache-separation.spec.mjs"
   },
   "devDependencies": {

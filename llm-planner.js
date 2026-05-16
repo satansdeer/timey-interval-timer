@@ -1,4 +1,4 @@
-import { MAX_INTERVALS } from "./fallback-planner.js";
+import { MAX_INTERVALS, isCorrection, normalizePrompt } from "./fallback-planner.js";
 
 export const WEBLLM_PACKAGE_VERSION = "0.2.83";
 export const PREFERRED_MODEL_ID = "Qwen2-0.5B-Instruct-q4f16_1-MLC";
@@ -74,36 +74,12 @@ export async function planWithTinyLlm({
   }
 
   const engine = await getEngine(onStatus);
-  const messages = [
-    {
-      role: "system",
-      content: [
-        "You convert natural-language workout timer requests into strict JSON.",
-        "Return only JSON matching this shape: {\"timers\":[{\"label\":\"Warmup\",\"durationSeconds\":480,\"kind\":\"warmup\"}]}",
-        "Use currentWorkoutShape as the compact source of truth for correction requests.",
-        "If the user corrects the middle blocks, preserve warmup/cooldown and the previous alternating block count/order unless explicitly changed.",
-        "Do not collapse an existing workout to a single interval unless the user explicitly asks for one interval.",
-        "Treat 'warmdown' as cooldown. Treat 'alternating cycles/blocks/rounds' as repeated work/rest or rest/work pairs.",
-        "Treat steps, intervals, and timers as individual intervals, not pairs. Exactly 6 steps in the middle means 6 middle intervals total.",
-        "If the user says N alternating blocks of 1 minute rest and 1 minute work, create N rest intervals and N work intervals between warmup and cooldown.",
-        "Duration wording near cycles, blocks, or 'each' usually applies to every middle interval, not to the number of cycles.",
-      ].join(" "),
-    },
-    {
-      role: "user",
-      content: JSON.stringify({
-        schema: timerSchema,
-        conversation: conversation.slice(-8),
-        currentWorkoutShape,
-        currentTimers: currentTimers.map(({ label, seconds, kind }) => ({
-          label,
-          durationSeconds: seconds,
-          kind,
-        })),
-        userRequest: text,
-      }),
-    },
-  ];
+  const messages = buildTinyLlmMessages({
+    text,
+    currentTimers,
+    currentWorkoutShape,
+    conversation,
+  });
 
   const completion = await engine.chat.completions.create({
     messages,
@@ -127,6 +103,55 @@ export async function planWithTinyLlm({
     model: selectedModelId,
     source: "tiny-llm",
   };
+}
+
+export function buildTinyLlmMessages({
+  text,
+  currentTimers = [],
+  currentWorkoutShape = null,
+  conversation = [],
+}) {
+  const correctionRequest = isCorrection(normalizePrompt(text));
+  const payload = {
+    schema: timerSchema,
+    correctionRequest,
+    userRequest: text,
+  };
+
+  if (correctionRequest) {
+    payload.conversation = conversation.slice(-8);
+    payload.currentWorkoutShape = currentWorkoutShape;
+    payload.currentTimers = currentTimers.map(({ label, seconds, kind }) => ({
+      label,
+      durationSeconds: seconds,
+      kind,
+    }));
+  }
+
+  return [
+    {
+      role: "system",
+      content: [
+        "You convert natural-language workout timer requests into strict JSON.",
+        "Return only JSON matching this shape: {\"timers\":[{\"label\":\"Warmup\",\"durationSeconds\":480,\"kind\":\"warmup\"}]}",
+        "For new requests, build timers only from userRequest. Do not copy prior or default timers.",
+        "Use currentWorkoutShape and currentTimers only when correctionRequest is true.",
+        "Use currentWorkoutShape as the compact source of truth for correction requests.",
+        "If the user corrects the middle blocks, preserve warmup/cooldown and the previous alternating block count/order unless explicitly changed.",
+        "Do not collapse an existing workout to a single interval unless the user explicitly asks for one interval.",
+        "Treat 'warmdown' as cooldown. Treat 'alternating cycles/blocks/rounds' as repeated work/rest or rest/work pairs.",
+        "Treat 'alternations' and common typos like 'alterations' as repeated work/rest or rest/work pairs. Treat low intensity/easy as rest.",
+        "Treat steps, intervals, and timers as individual intervals, not pairs. Exactly 6 steps in the middle means 6 middle intervals total.",
+        "For a new standalone timer list, create exactly the requested timers as kind other; do not copy currentTimers. Example: '5 one minute timers and one 30 second' means five 60-second timers plus one 30-second timer.",
+        "If the user says N alternating blocks of 1 minute rest and 1 minute work, create N rest intervals and N work intervals between warmup and cooldown.",
+        "Duration wording near cycles, blocks, or 'each' usually applies to every middle interval, not to the number of cycles.",
+      ].join(" "),
+    },
+    {
+      role: "user",
+      content: JSON.stringify(payload),
+    },
+  ];
 }
 
 export function validateLlmTimers(timers) {

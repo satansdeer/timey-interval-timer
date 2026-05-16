@@ -50,6 +50,43 @@ assert.deepEqual(summarize(poorlyArticulated), {
 assert.equal(poorlyArticulated.timers[1].kind, "rest");
 assert.equal(poorlyArticulated.timers[2].kind, "work");
 
+const highLowAlterations = planWithFallback(
+  "I want 8 minutes warmup, then 4 alterations of high intensity and low intensity and then 8 minutes cooldown",
+  [],
+);
+assert.deepEqual(summarize(highLowAlterations), {
+  count: 10,
+  totalSeconds: 1440,
+  warmups: 1,
+  cooldowns: 1,
+  work: 4,
+  rest: 4,
+  workSeconds: [60],
+  restSeconds: [60],
+});
+assert.equal(highLowAlterations.timers[1].kind, "work");
+assert.equal(highLowAlterations.timers[2].kind, "rest");
+
+const genericTimerList = planWithFallback("5 one minute timers and one 30 second", []);
+assert.deepEqual(summarize(genericTimerList), {
+  count: 6,
+  totalSeconds: 330,
+  warmups: 0,
+  cooldowns: 0,
+  work: 0,
+  rest: 0,
+  workSeconds: [],
+  restSeconds: [],
+});
+assert.deepEqual(
+  genericTimerList.timers.map((timer) => timer.kind),
+  ["other", "other", "other", "other", "other", "other"],
+);
+assert.deepEqual(
+  genericTimerList.timers.map((timer) => timer.seconds),
+  [60, 60, 60, 60, 60, 30],
+);
+
 const correction = planWithFallback(
   "the alterating blocks shoudl be of 1 minute",
   poorlyArticulated.timers.map((timer) => ({
@@ -209,7 +246,7 @@ const halvedMiddlePlan = planWithFallback(
       role: "user",
       text: "Warmup 8 minu, 8 minutes cooldown. Between 8 steps each 1 minute alterating rest/work",
     },
-    { role: "assistant", text: "18 intervals, 32:00 total.", source: "guard" },
+    { role: "assistant", text: "18 intervals, 32:00 total.", source: "tiny-llm" },
     { role: "user", text: "ah, too many intervals in between, make it twice as little" },
   ],
 );
