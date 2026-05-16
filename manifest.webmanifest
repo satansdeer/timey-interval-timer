@@ -1,0 +1,9 @@
+{
+  "name": "Timey",
+  "short_name": "Timey",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f6f7fb",
+  "theme_color": "#0f8b8d",
+  "description": "A local-first interval timer builder."
+}

@@ -1,0 +1,164 @@
+[
+  {
+    "name": "failed-six-steps-dialog",
+    "description": "Regression for the pasted dialog where six steps became six pairs and middle durations inherited 8 minutes.",
+    "turns": [
+      {
+        "user": "I want to have eight minute warmup eight minutes cool down in between. I want to have exactly 6 steps. Each step should be one minute long and they should alter rest work.",
+        "expect": {
+          "count": 8,
+          "totalSeconds": 1320,
+          "warmups": 1,
+          "cooldowns": 1,
+          "work": 3,
+          "rest": 3,
+          "workSeconds": [60],
+          "restSeconds": [60],
+          "middleOrder": ["rest", "work", "rest", "work", "rest", "work"]
+        }
+      },
+      {
+        "user": "The sixth intervals in the middle should be one minute long",
+        "expect": {
+          "count": 8,
+          "totalSeconds": 1320,
+          "warmups": 1,
+          "cooldowns": 1,
+          "work": 3,
+          "rest": 3,
+          "workSeconds": [60],
+          "restSeconds": [60],
+          "middleOrder": ["rest", "work", "rest", "work", "rest", "work"]
+        }
+      },
+      {
+        "user": "you got me wrong I wanted to have eight minute warmup eight minutes cooldown and six step stick six steps in the middle one minute each alternating between work and rest",
+        "expect": {
+          "count": 8,
+          "totalSeconds": 1320,
+          "warmups": 1,
+          "cooldowns": 1,
+          "work": 3,
+          "rest": 3,
+          "workSeconds": [60],
+          "restSeconds": [60],
+          "middleOrder": ["work", "rest", "work", "rest", "work", "rest"]
+        }
+      }
+    ]
+  },
+  {
+    "name": "blocks-mean-pairs",
+    "description": "Blocks/rounds/cycles are repeated pairs, unlike steps.",
+    "turns": [
+      {
+        "user": "Warmup 8 min, then 8 alternating blocks of 1 minute rest and 1 minute work, then 8 min cooldown",
+        "expect": {
+          "count": 18,
+          "totalSeconds": 1920,
+          "warmups": 1,
+          "cooldowns": 1,
+          "work": 8,
+          "rest": 8,
+          "workSeconds": [60],
+          "restSeconds": [60],
+          "middleOrderStartsWith": "rest"
+        }
+      }
+    ]
+  },
+  {
+    "name": "rounds-mean-pairs",
+    "description": "Six rounds should create six work/rest pairs.",
+    "turns": [
+      {
+        "user": "Give me an 8 minute warmup and 8 minute cooldown with 6 rounds of 1 min hard then 1 min rest",
+        "expect": {
+          "count": 14,
+          "totalSeconds": 1680,
+          "warmups": 1,
+          "cooldowns": 1,
+          "work": 6,
+          "rest": 6,
+          "workSeconds": [60],
+          "restSeconds": [60],
+          "middleOrderStartsWith": "work"
+        }
+      }
+    ]
+  },
+  {
+    "name": "steps-are-individual-intervals",
+    "description": "Steps are individual middle intervals, not pairs.",
+    "turns": [
+      {
+        "user": "8 min warmup, 8 min cooldown, exactly 10 steps between them, 30 seconds each, alternating work rest",
+        "expect": {
+          "count": 12,
+          "totalSeconds": 1260,
+          "warmups": 1,
+          "cooldowns": 1,
+          "work": 5,
+          "rest": 5,
+          "workSeconds": [30],
+          "restSeconds": [30],
+          "middleOrderStartsWith": "work"
+        }
+      }
+    ]
+  },
+  {
+    "name": "typo-heavy-rest-work",
+    "description": "Typo-heavy request that still needs endpoint preservation and rest/work order.",
+    "turns": [
+      {
+        "user": "Warmup 8 minu, 8 minutes cooldown. Between 8 steps each 1 minute alterating rest/work",
+        "expect": {
+          "count": 10,
+          "totalSeconds": 1440,
+          "warmups": 1,
+          "cooldowns": 1,
+          "work": 4,
+          "rest": 4,
+          "workSeconds": [60],
+          "restSeconds": [60],
+          "middleOrderStartsWith": "rest"
+        }
+      },
+      {
+        "user": "ah, too many intervals in between, make it twice as little",
+        "expect": {
+          "count": 6,
+          "totalSeconds": 1200,
+          "warmups": 1,
+          "cooldowns": 1,
+          "work": 2,
+          "rest": 2,
+          "workSeconds": [60],
+          "restSeconds": [60],
+          "middleOrderStartsWith": "rest"
+        }
+      }
+    ]
+  },
+  {
+    "name": "endpoint-duration-does-not-bleed",
+    "description": "Long endpoint durations should not become middle interval durations.",
+    "turns": [
+      {
+        "user": "Please make warmup 12 minutes, cooldown 9 minutes, and exactly 5 intervals in the middle, each 45 seconds, alternating rest then work",
+        "expect": {
+          "count": 7,
+          "totalSeconds": 1485,
+          "warmups": 1,
+          "cooldowns": 1,
+          "work": 2,
+          "rest": 3,
+          "workSeconds": [45],
+          "restSeconds": [45],
+          "middleOrder": ["rest", "work", "rest", "work", "rest"]
+        }
+      }
+    ]
+  }
+]
