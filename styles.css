@@ -225,8 +225,8 @@ h2 {
 }
 
 .tab-button:not(.active) {
-  border-bottom: 2px solid var(--shadow);
-  border-color: var(--highlight) var(--dark-shadow) var(--shadow) var(--highlight);
+  border-bottom: 2px solid var(--highlight);
+  border-color: var(--highlight) var(--dark-shadow) var(--highlight) var(--highlight);
   color: #303030;
   min-height: 24px;
   padding: 2px 12px 2px;
@@ -235,8 +235,8 @@ h2 {
 }
 
 .tab-button:not(.active)::after {
-  background: var(--shadow);
-  bottom: -2px;
+  background: var(--highlight);
+  bottom: 0;
   content: "";
   height: 2px;
   left: 0;
