@@ -104,6 +104,7 @@ def evaluate_step(model, tokenizer, records, args, step, output_dir, device):
     parse_passes = 0
     strict_passes = 0
     semantic_passes = 0
+    semantic_invalid_count = 0
     started = time.time()
 
     generation_args = {
@@ -137,6 +138,9 @@ def evaluate_step(model, tokenizer, records, args, step, output_dir, device):
                 output = output.strip()
                 expected = example["timers"]
                 parse_ok = False
+                semantic_invalid = bool(parsed_output.get("semanticInvalid"))
+                semantic_invalid_detail = parsed_output.get("semanticInvalidDetail")
+                semantic_invalid_count += int(semantic_invalid)
 
                 try:
                     if not parsed_output.get("ok"):
@@ -160,6 +164,8 @@ def evaluate_step(model, tokenizer, records, args, step, output_dir, device):
                         "id": record["id"],
                         "category": record["category"],
                         "parseOk": parse_ok,
+                        "semanticInvalid": semantic_invalid,
+                        "semanticInvalidDetail": semantic_invalid_detail,
                         "ok": strict_ok,
                         "semanticOk": semantic_ok,
                         "strictErrors": strict_errors,
@@ -182,12 +188,17 @@ def evaluate_step(model, tokenizer, records, args, step, output_dir, device):
         "strictExactRate": rate(strict_passes, total),
         "semanticExact": semantic_passes,
         "semanticExactRate": rate(semantic_passes, total),
+        "semanticInvalid": semantic_invalid_count,
+        "semanticInvalidRate": rate(semantic_invalid_count, total),
         "categorySummary": summarize_predictions_by_category(predictions),
         "seconds": round(time.time() - started, 3),
         "predictions": str(prediction_path),
     }
     print(
-        f"eval step {step}: parseable={parse_passes}/{total} strict={strict_passes}/{total} semantic={semantic_passes}/{total}",
+        (
+            f"eval step {step}: parseable={parse_passes}/{total} strict={strict_passes}/{total} "
+            f"semantic={semantic_passes}/{total} semantic-invalid={semantic_invalid_count}/{total}"
+        ),
         flush=True,
     )
     print_category_summary(result["categorySummary"])
@@ -333,12 +344,14 @@ def summarize_predictions_by_category(predictions):
                 "parseable": 0,
                 "strictExact": 0,
                 "semanticExact": 0,
+                "semanticInvalid": 0,
             },
         )
         bucket["count"] += 1
         bucket["parseable"] += int(bool(prediction.get("parseOk")))
         bucket["strictExact"] += int(bool(prediction.get("ok")))
         bucket["semanticExact"] += int(bool(prediction.get("semanticOk")))
+        bucket["semanticInvalid"] += int(bool(prediction.get("semanticInvalid")))
 
     summary = []
     for bucket in buckets.values():
@@ -349,9 +362,10 @@ def summarize_predictions_by_category(predictions):
                 "parseableRate": rate(bucket["parseable"], count),
                 "strictExactRate": rate(bucket["strictExact"], count),
                 "semanticExactRate": rate(bucket["semanticExact"], count),
+                "semanticInvalidRate": rate(bucket["semanticInvalid"], count),
             }
         )
-    return sorted(summary, key=lambda item: (item["strictExactRate"], item["category"]))
+    return sorted(summary, key=lambda item: (-item["semanticInvalidRate"], item["strictExactRate"], item["category"]))
 
 
 def print_category_summary(summary):
@@ -362,11 +376,13 @@ def print_category_summary(summary):
         print(
             "    {category}: strict {strictExact}/{count} ({strictPercent:.1f}%) "
             "semantic {semanticExact}/{count} ({semanticPercent:.1f}%) "
-            "parse {parseable}/{count} ({parsePercent:.1f}%)".format(
+            "parse {parseable}/{count} ({parsePercent:.1f}%) "
+            "semantic-invalid {semanticInvalid}/{count} ({semanticInvalidPercent:.1f}%)".format(
                 **item,
                 strictPercent=item["strictExactRate"] * 100,
                 semanticPercent=item["semanticExactRate"] * 100,
                 parsePercent=item["parseableRate"] * 100,
+                semanticInvalidPercent=item["semanticInvalidRate"] * 100,
             ),
             flush=True,
         )

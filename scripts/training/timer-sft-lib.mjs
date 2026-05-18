@@ -1228,6 +1228,7 @@ function addPhase4HardGenericTimerSpec(
 
 function addUserRequestExpansionSpecs(add) {
   addUserAroundContrastSpecs(add);
+  addUserAroundRegressionGuardSpecs(add);
   addUserGenericSurfaceSpecs(add);
   addUserDurationSurfaceSpecs(add);
   addUserLabelSurfaceSpecs(add);
@@ -1315,6 +1316,137 @@ function addUserAroundContrastSpecs(add) {
       variant,
     );
     variant += 1;
+  }
+}
+
+function addUserAroundRegressionGuardSpecs(add) {
+  const actualFailureCases = [
+    {
+      request:
+        "12 minute warmup and 9 minute cooldown around 5 alternating 45 second rest/work intervals in the middle",
+      timers: withEndpoints(12, 9, alternating(5, ["rest", "work"], 45, workRestLabels())),
+    },
+    {
+      request:
+        "8 min warmup, 8 rounds around the middle, each round has 15 seconds rest then 1 minute work, 8 min cooldown",
+      timers: withEndpoints(8, 8, pairs(8, ["rest", "work"], 60, 15, workRestLabels())),
+    },
+    {
+      request:
+        "5 minute warmup, 4 rest/work intervals of 30 seconds surrounded by a 5 minute cooldown",
+      timers: withEndpoints(5, 5, alternating(4, ["rest", "work"], 30, workRestLabels())),
+    },
+    {
+      request:
+        "5 minute warmup around 4 full rounds of 1 minute rest and 1 minute work, then 5 minute cooldown",
+      timers: withEndpoints(5, 5, pairs(4, ["rest", "work"], 60, 60, workRestLabels())),
+    },
+    {
+      request:
+        "8 minute warmup around 6 one minute work/rest alterations, then 8 minute cooldown",
+      timers: withEndpoints(8, 8, alternating(6, ["work", "rest"], 60, workRestLabels())),
+    },
+    {
+      request:
+        "10 minute warmup, surround 5 work/rest blocks with cooldown 8 minutes; every block is 1 minute work and 30 seconds rest",
+      timers: withEndpoints(10, 8, pairs(5, ["work", "rest"], 60, 30, workRestLabels())),
+    },
+  ];
+
+  let variant = 0;
+  for (const spec of actualFailureCases) {
+    addUserExpansionSpec(add, "user-around-regression-guard", spec.request, spec.timers, variant, {
+      source: "phase4e-actual-around-failure",
+    });
+    variant += 1;
+  }
+
+  const endpoints = [
+    [5, 5],
+    [8, 8],
+    [10, 8],
+    [12, 9],
+  ];
+  const alternatingCases = [
+    [4, 30],
+    [5, 45],
+    [6, 60],
+    [8, 30],
+    [10, 60],
+  ];
+  const pairCases = [
+    [3, 60, 30],
+    [4, 45, 15],
+    [5, 60, 60],
+    [6, 30, 15],
+    [8, 20, 10],
+  ];
+  const orders = [
+    { order: ["rest", "work"], words: "rest/work", phrase: "rest then work" },
+    { order: ["work", "rest"], words: "work/rest", phrase: "work then rest" },
+  ];
+
+  for (const [warmupMinutes, cooldownMinutes] of endpoints) {
+    for (const [count, durationSeconds] of alternatingCases) {
+      for (const order of orders) {
+        const timers = withEndpoints(
+          warmupMinutes,
+          cooldownMinutes,
+          alternating(count, order.order, durationSeconds, workRestLabels()),
+        );
+        const duration = userDurationText(durationSeconds, variant);
+        const countText = wordOrNumber(count, variant);
+        const templates = [
+          `${minuteText(warmupMinutes, variant)} warmup around ${countText} ${duration} alternating ${order.words} timers, then ${minuteText(cooldownMinutes, variant + 1)} cooldown`,
+          `surround ${countText} ${duration} ${order.words} intervals with ${warmupMinutes} min warmup and ${cooldownMinutes} min cooldown`,
+          `bookend ${countText} separate ${duration} ${order.words} middle timers with warmup ${warmupMinutes} minutes and cooldown ${cooldownMinutes} minutes`,
+          `${warmupMinutes} min warmup, ${countText} ${duration} middle alterations ${order.phrase}, ${cooldownMinutes} min cooldown; not plain Timer labels`,
+        ];
+        addUserExpansionSpec(
+          add,
+          "user-around-regression-guard",
+          templates[variant % templates.length],
+          timers,
+          variant,
+          { source: "phase4e-anti-around-template" },
+        );
+        variant += 1;
+      }
+    }
+  }
+
+  for (const [warmupMinutes, cooldownMinutes] of endpoints) {
+    for (const [count, workSeconds, restSeconds] of pairCases) {
+      for (const order of orders) {
+        const timers = withEndpoints(
+          warmupMinutes,
+          cooldownMinutes,
+          pairs(count, order.order, workSeconds, restSeconds, workRestLabels()),
+        );
+        const countText = wordOrNumber(count, variant);
+        const workDuration = userDurationText(workSeconds, variant);
+        const restDuration = userDurationText(restSeconds, variant + 1);
+        const firstKind = order.order[0];
+        const secondKind = order.order[1];
+        const firstDuration = firstKind === "work" ? workDuration : restDuration;
+        const secondDuration = secondKind === "work" ? workDuration : restDuration;
+        const templates = [
+          `${warmupMinutes} minute warmup around ${countText} full ${order.words} rounds, each ${firstDuration} ${firstKind} then ${secondDuration} ${secondKind}, ${cooldownMinutes} minute cooldown`,
+          `bookend ${countText} blocks with ${warmupMinutes} min warmup and ${cooldownMinutes} min cooldown; every block has ${workDuration} work and ${restDuration} rest`,
+          `surround ${countText} ${order.words} pairs with warmup ${warmupMinutes} minutes and cooldown ${cooldownMinutes} minutes, work is ${workDuration}, rest is ${restDuration}`,
+          `${warmupMinutes} min warmup, ${countText} complete rounds of ${firstKind} then ${secondKind} around the middle, ${cooldownMinutes} min cooldown`,
+        ];
+        addUserExpansionSpec(
+          add,
+          "user-around-regression-guard",
+          templates[variant % templates.length],
+          timers,
+          variant,
+          { source: "phase4e-anti-around-template" },
+        );
+        variant += 1;
+      }
+    }
   }
 }
 
@@ -1476,12 +1608,12 @@ function addUserLabelSurfaceSpecs(add) {
   }
 }
 
-function addUserExpansionSpec(add, category, request, timers, variant) {
+function addUserExpansionSpec(add, category, request, timers, variant, options = {}) {
   const validation = variant % 7 === 0;
   add(category, request, timers, {
     split: validation ? "validation" : "train",
     hardValidation: validation,
-    source: "phase6-user-request",
+    source: options.source ?? "phase6-user-request",
     sourceCategory: category,
   });
 }

@@ -936,22 +936,6 @@ Current policy:
   - raw real-browser ONNX validation by category;
   - repaired production validation as a separate safety metric.
 
-Next model-first training task:
-
-- Continue from the deployed checkpoint using the expanded user-request dataset.
-- Weight weak raw categories without hiding them behind repair:
-  - `user-generic-surface`
-  - `generic-position`
-  - `generic-position-hard`
-  - `user-duration-surface`
-- Preserve strong categories with replay:
-  - `count-middle`
-  - `count-pairs`
-  - `pairs`
-  - `explicit-label-copy`
-  - `user-around-contrast`
-- Promote only if raw category summaries improve without broad regressions.
-
 Initial model-first sweep:
 
 - Artifact:
@@ -969,6 +953,56 @@ Initial model-first sweep:
     overgeneralization into warmup/cooldown and work/rest outputs.
   - Next training should add semantic-invalid raw eval and anti-`around`
     contrast rows before another sweep.
+
+Anti-around guard sweep:
+
+- Artifact:
+  `training/eval-runs/phase4e-anti-around-guards/README.md`
+- Run:
+  `training/seq2seq-runs/phase4e-anti-around-balanced-lr5e-6/`
+- Completed:
+  - Added `semanticInvalid` and `semanticInvalidDetail` to raw Python/HF eval.
+  - Added `user-around-regression-guard` rows generated from actual bad output
+    shapes:
+    - `around` with `alt`
+    - `around` wrapping `|`
+    - grouped syntax with work/rest labels instead of `Timer`
+  - Regenerated `training/generated-dsl-compressed-end-user-requests/`.
+- Dataset after regeneration:
+  - train: 1194
+  - validation: 207
+  - hard validation: 62
+  - `user-around-regression-guard`: 73 train, 13 validation/hard validation
+- Sanity check:
+  - Previous high-pressure checkpoint measured with the new metric:
+    strict 155/207, parseable 186/207, semantic-invalid 21/207.
+  - Invalids concentrate in `core-regression`, `count-middle`,
+    `individual-middle`, `pairs`, and around guard categories.
+- Balanced sweep result:
+  - Step 750 strict 165/207, parseable 206/207, semantic-invalid 0/207.
+  - `user-around-contrast` improved 8/20 to 15/20.
+  - `user-around-regression-guard` improved 7/13 to 8/13.
+  - `user-generic-surface`, `generic-position`, and `generic-position-hard`
+    did not improve.
+- Conclusion:
+  - Do not promote.
+  - The guard data and metric successfully fight invalid `around`
+    overgeneralization, but the safe balanced recipe does not learn the
+    generic-position task.
+  - Remaining failures are mostly valid but wrong outputs: dropped endpoints,
+    wrong middle counts, wrong durations, or swapped work/rest order.
+
+Next model-first training task:
+
+- Use a staged curriculum instead of one global weighting recipe:
+  1. short generic-focused phase to recover `user-generic-surface`,
+     `generic-position`, and `generic-position-hard` gains;
+  2. lower-rate anti-around/core replay phase to push `semanticInvalid` back to
+     zero and protect `count-middle`, `individual-middle`, `pairs`, and
+     `core-regression`;
+  3. evaluate raw Python/HF, then raw browser ONNX, before any promotion.
+- Promotion remains blocked unless raw category summaries improve without
+  relying on deterministic repair.
 
 ### Phase 5: Quantization-Aware Continuation
 

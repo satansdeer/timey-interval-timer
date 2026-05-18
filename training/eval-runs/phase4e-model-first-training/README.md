@@ -113,3 +113,9 @@ Next model-first experiment:
 3. Try lower learning rate or staged replay after a short generic-focused phase.
 4. Promote only if raw browser strict categories improve without core,
    `count-middle`, `individual-middle`, or `pairs` regressions.
+
+Items 1 and 2 were completed in
+`training/eval-runs/phase4e-anti-around-guards/`. That follow-up confirms the
+metric catches this checkpoint's invalid `around` failures and that balanced
+anti-around replay can keep semantic-invalid output at zero, but the next
+capability experiment still needs staged generic training plus replay.

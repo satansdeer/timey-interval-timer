@@ -14,7 +14,7 @@
     "hardValidation": "timer-sft-hard-validation.jsonl"
   },
   "all": {
-    "count": 1315,
+    "count": 1401,
     "categories": {
       "core-regression": 8,
       "individual-middle": 144,
@@ -30,13 +30,14 @@
       "generic-position-hard": 130,
       "generic-timers-hard": 55,
       "user-around-contrast": 134,
+      "user-around-regression-guard": 86,
       "user-generic-surface": 50,
       "user-duration-surface": 14,
       "user-label-surface": 16
     }
   },
   "train": {
-    "count": 1121,
+    "count": 1194,
     "categories": {
       "core-regression": 6,
       "individual-middle": 118,
@@ -52,13 +53,14 @@
       "generic-position-hard": 120,
       "generic-timers-hard": 49,
       "user-around-contrast": 114,
+      "user-around-regression-guard": 73,
       "user-generic-surface": 42,
       "user-duration-surface": 12,
       "user-label-surface": 13
     }
   },
   "validation": {
-    "count": 194,
+    "count": 207,
     "categories": {
       "core-regression": 2,
       "individual-middle": 26,
@@ -73,17 +75,19 @@
       "generic-position-hard": 10,
       "generic-timers-hard": 6,
       "user-around-contrast": 20,
+      "user-around-regression-guard": 13,
       "user-generic-surface": 8,
       "user-duration-surface": 2,
       "user-label-surface": 3
     }
   },
   "hardValidation": {
-    "count": 49,
+    "count": 62,
     "categories": {
       "generic-position-hard": 10,
       "generic-timers-hard": 6,
       "user-around-contrast": 20,
+      "user-around-regression-guard": 13,
       "user-generic-surface": 8,
       "user-duration-surface": 2,
       "user-label-surface": 3

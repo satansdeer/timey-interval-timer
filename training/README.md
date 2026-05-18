@@ -163,6 +163,14 @@ The first model-first generic sweep is recorded in
 surface categories, but overgeneralized `around` into non-generic workouts, so
 no checkpoint was promoted.
 
+The follow-up anti-around guard sweep is recorded in
+`training/eval-runs/phase4e-anti-around-guards/`. It added a raw
+`semanticInvalid` metric and 86 `user-around-regression-guard` examples. The
+metric catches the previous high-pressure checkpoint at 21/207 semantic-invalid
+outputs; the balanced guard sweep keeps semantic-invalid at 0/207 and improves
+around contrast rows, but does not recover generic-position capability, so no
+checkpoint was promoted.
+
 ## Results
 
 The production checkpoint is:
@@ -199,6 +207,10 @@ The user-request expansion was measured in
 `generic-position`, so no checkpoint from that phase was promoted. The broad
 plain-timer `user-generic-surface` cases are now covered by deterministic
 generic-sequence repair in the browser path.
+
+The next model-first experiment should be staged: first a short generic-focused
+phase, then a lower-rate anti-around/core replay phase, with raw Python/HF and
+raw browser ONNX gates before any promotion.
 
 ## Browser Export
 
