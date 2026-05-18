@@ -1131,6 +1131,80 @@ Conclusion:
   and duration-copy correctness under `+`, while keeping `semanticInvalid` at
   0/207.
 
+### Phase 4G: Plus DSL Model Training
+
+Status: completed 2026-05-18; HF checkpoint candidate selected, not exported
+or deployed yet.
+
+Artifact:
+
+- `training/eval-runs/phase4g-model-training/README.md`
+
+Goal:
+
+Run real continuation training after the canonical `+` migration and find a
+candidate that improves raw model capability without relying on deterministic
+repair.
+
+Continuation source:
+
+```text
+training/seq2seq-runs/phase4f-plus-canonical-staged-lr5e-6/checkpoint-750
+```
+
+Main run:
+
+```text
+training/seq2seq-runs/phase4g-plus-continued-staged750-lr2e-6/
+```
+
+Results on the 207-row expanded validation set:
+
+| Step | Strict | Parseable | Semantic-invalid |
+| ---: | ---: | ---: | ---: |
+| 0 | 172/207 | 204/207 | 2/207 |
+| 100 | 173/207 | 205/207 | 1/207 |
+| 250 | 173/207 | 206/207 | 0/207 |
+| 500 | 175/207 | 206/207 | 0/207 |
+| 1000 | 171/207 | 204/207 | 2/207 |
+
+Best HF checkpoint:
+
+```text
+training/seq2seq-runs/phase4g-plus-continued-staged750-lr2e-6/checkpoint-500
+```
+
+Best checkpoint category notes:
+
+- `generic-position-hard`: improved to 4/10.
+- `user-around-regression-guard`: improved to 10/13.
+- `count-generic`: regressed from 20/21 at Phase 4F step 750 to 19/21.
+- Core/count-middle/count-pairs/explicit-label/individual-middle/pairs stayed
+  perfect.
+- No semantic-invalid output at best step.
+
+Cleanup control:
+
+- Run:
+  `training/seq2seq-runs/phase4g-plus-balanced-cleanup-lr1e-6/`
+- Source:
+  `training/seq2seq-runs/phase4g-plus-continued-staged750-lr2e-6/checkpoint-500`
+- Best aggregate stayed 175/207 with 0 semantic-invalid, but the category mix
+  was weaker (`generic-position-hard` 3/10, `count-generic` 20/21), so it did
+  not replace the main checkpoint.
+
+Conclusion:
+
+- This is the first post-`+` checkpoint with both an aggregate gain and
+  zero semantic-invalid raw Python/HF output.
+- Current export candidate:
+  `training/seq2seq-runs/phase4g-plus-continued-staged750-lr2e-6/checkpoint-500`
+- Next task is browser export/gating:
+  - export candidate to ONNX
+  - apply the existing q8 encoder + q4 decoder quantization recipe
+  - update `models/timey-t5-efficient-tiny/`
+  - run raw browser ONNX tests before considering deployment
+
 ### Phase 5: Quantization-Aware Continuation
 
 Status: pending, only do this if Phase 2 int4/mixed quantization causes useful

@@ -188,6 +188,14 @@ continuation reached 172/207 strict with 2/207 semantic-invalid outputs from
 the staged checkpoint. The deployed-checkpoint control stayed at 0/207
 semantic-invalid but only reached 162/207 strict. No checkpoint was promoted.
 
+The follow-up model-training pass is recorded in
+`training/eval-runs/phase4g-model-training/`. Continuing the best Phase 4F
+checkpoint at `2e-6` produced
+`training/seq2seq-runs/phase4g-plus-continued-staged750-lr2e-6/checkpoint-500`,
+which reached 175/207 strict, 206/207 parseable, and 0/207 semantic-invalid.
+It is the current HF export candidate, pending browser ONNX export and raw
+browser gating.
+
 ## Results
 
 The production checkpoint is:
