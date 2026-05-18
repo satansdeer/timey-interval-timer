@@ -34,14 +34,17 @@ node scripts/training/build-timer-sft.mjs \
   --dsl-end-token \
   --phase4-hard-data \
   --user-request-expansion \
+  --phase4h-residual-data \
   --out-dir training/generated-dsl-compressed-end-user-requests
 ```
 
-That dataset currently has 1194 train rows, 207 validation rows, and 62 hard
+That dataset currently has 1467 train rows, 207 validation rows, and 62 hard
 validation rows. It adds broad phrasing and contrast categories for
 `generic-position-hard`, `generic-timers-hard`, `user-around-contrast`,
 `user-around-regression-guard`, `user-generic-surface`,
-`user-duration-surface`, and `user-label-surface`.
+`user-duration-surface`, and `user-label-surface`, plus Phase 4H train-only
+residual categories for generic endpoint copying, word-duration copying,
+work/rest semantic guards, and label-copy cleanup.
 
 ## DSL Format
 
@@ -193,8 +196,15 @@ The follow-up model-training pass is recorded in
 checkpoint at `2e-6` produced
 `training/seq2seq-runs/phase4g-plus-continued-staged750-lr2e-6/checkpoint-500`,
 which reached 175/207 strict, 206/207 parseable, and 0/207 semantic-invalid.
-It is the current HF export candidate, pending browser ONNX export and raw
-browser gating.
+It was superseded by Phase 4H.
+
+The residual curriculum pass is recorded in
+`training/eval-runs/phase4h-residual-curriculum/`. The best checkpoint is
+`training/seq2seq-runs/phase4h-plus-guard-cleanup-lr1e-6/checkpoint-500`.
+With beam 4 it reaches 183/207 strict, 205/207 parseable, and 2/207
+semantic-invalid. With beam 8 it reaches 185/207 strict, 207/207 parseable,
+and 0/207 semantic-invalid. This is the current HF export candidate, but it
+requires raw browser ONNX testing with beam 8 before promotion.
 
 ## Results
 
@@ -225,6 +235,12 @@ The current dataset adds compact generic group targets for those remaining raw
 model misses. All generic group targets use `+`, including symmetric bookends.
 This is intended to reduce endpoint-copy and middle-run duplication errors
 without teaching a second grouped token that the model can overgeneralize.
+
+The current expanded experimental dataset adds Phase 4H train-only residual
+rows. These rows improved the best tiny candidate from 175/207 to 185/207
+under beam 8, but did not make the model perfect. The remaining misses are
+valid-but-wrong outputs around word durations, generic endpoint copying, and
+some work/rest order or duration details.
 
 The user-request expansion was measured in
 `training/eval-runs/phase6-user-request-expansion/`. It improved the new

@@ -16,7 +16,7 @@ def main():
     random.seed(args.seed)
     torch.manual_seed(args.seed)
 
-    raw_train_records = read_jsonl(args.train)
+    raw_train_records = filter_train_records(read_jsonl(args.train), args.train_category, args.exclude_train_category)
     train_records = apply_category_weights(raw_train_records, args.category_weight)
     validation_records = read_jsonl(args.validation)
     output_dir = Path(args.output_dir)
@@ -55,6 +55,8 @@ def main():
             "weightDecay": args.weight_decay,
             "maxGradNorm": args.max_grad_norm,
             "categoryWeight": args.category_weight,
+            "trainCategory": args.train_category,
+            "excludeTrainCategory": args.exclude_train_category,
         },
         "steps": [],
     }
@@ -311,6 +313,19 @@ def read_jsonl(path):
     return [json.loads(line) for line in Path(path).read_text(encoding="utf-8").splitlines() if line.strip()]
 
 
+def filter_train_records(records, include_categories, exclude_categories):
+    include = set(include_categories)
+    exclude = set(exclude_categories)
+    filtered = [
+        record
+        for record in records
+        if (not include or record.get("category") in include) and record.get("category") not in exclude
+    ]
+    if not filtered:
+        raise ValueError("train category filters removed all training records")
+    return filtered
+
+
 def chunks(values, size):
     for index in range(0, len(values), size):
         yield values[index : index + size]
@@ -401,6 +416,16 @@ def parse_args():
     parser.add_argument("--max-grad-norm", type=float, default=1.0)
     parser.add_argument("--train-order", choices=["sequential", "shuffle", "random"], default="shuffle")
     parser.add_argument(
+        "--train-category",
+        default="",
+        help="Comma-separated category allowlist for training records, useful for curriculum phases.",
+    )
+    parser.add_argument(
+        "--exclude-train-category",
+        default="",
+        help="Comma-separated category blocklist for training records.",
+    )
+    parser.add_argument(
         "--category-weight",
         default="",
         help="Comma-separated integer repeat weights by category, for example explicit-label-copy=6,explicit-sequence=8",
@@ -420,6 +445,8 @@ def parse_args():
     parser.add_argument("--seed", type=int, default=7)
     parsed = parser.parse_args()
     parsed.steps = [int(value) for value in parsed.steps.split(",") if value.strip()]
+    parsed.train_category = parse_category_list(parsed.train_category)
+    parsed.exclude_train_category = parse_category_list(parsed.exclude_train_category)
     parsed.category_weight = parse_category_weights(parsed.category_weight)
     if any(step < 0 for step in parsed.steps):
         raise ValueError("--steps must contain non-negative integers")
@@ -457,6 +484,12 @@ def parse_category_weights(value):
             raise ValueError("--category-weight entries must be category=integer with integer >= 1")
         weights[category] = weight
     return weights
+
+
+def parse_category_list(value):
+    if not value:
+        return []
+    return [item.strip() for item in value.split(",") if item.strip()]
 
 
 if __name__ == "__main__":

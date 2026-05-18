@@ -90,8 +90,8 @@ Current opt-in expanded dataset:
 - Dataset output directory:
   `training/generated-dsl-compressed-end-user-requests/`
 - Build flags:
-  `--phase4-hard-data --user-request-expansion`
-- Train rows: 1194
+  `--phase4-hard-data --user-request-expansion --phase4h-residual-data`
+- Train rows: 1467
 - Validation rows: 207
 - Hard validation rows: 62
 - New categories:
@@ -102,6 +102,12 @@ Current opt-in expanded dataset:
   - `user-generic-surface`
   - `user-duration-surface`
   - `user-label-surface`
+- Train-only Phase 4H residual categories:
+  - `phase4h-generic-endpoint`
+  - `phase4h-count-duration`
+  - `phase4h-work-rest-contrast`
+  - `phase4h-plus-work-rest-guard`
+  - `phase4h-label-copy`
 
 Current validation categories:
 
@@ -122,6 +128,16 @@ Current validation categories:
 - `user-duration-surface`
 - `user-generic-surface`
 - `user-label-surface`
+
+Current HF export candidate:
+
+- Checkpoint:
+  `training/seq2seq-runs/phase4h-plus-guard-cleanup-lr1e-6/checkpoint-500`
+- Required decode for current best Python/HF result: beam 8
+- Python/HF expanded validation result with beam 8:
+  185/207 strict, 207/207 parseable, 0/207 semantic-invalid
+- Status: not exported, not deployed. Needs ONNX export, q8/q4 quantization,
+  raw browser beam-8 gate, and latency measurement before promotion.
 
 Current real-browser acceptance categories:
 
@@ -1195,15 +1211,92 @@ Cleanup control:
 
 Conclusion:
 
-- This is the first post-`+` checkpoint with both an aggregate gain and
+- This was the first post-`+` checkpoint with both an aggregate gain and
   zero semantic-invalid raw Python/HF output.
-- Current export candidate:
+- It was superseded by Phase 4H, which improved aggregate validation further.
+- Historical candidate:
   `training/seq2seq-runs/phase4g-plus-continued-staged750-lr2e-6/checkpoint-500`
-- Next task is browser export/gating:
-  - export candidate to ONNX
-  - apply the existing q8 encoder + q4 decoder quantization recipe
-  - update `models/timey-t5-efficient-tiny/`
-  - run raw browser ONNX tests before considering deployment
+
+### Phase 4H: Residual Curriculum Training
+
+Status: completed local HF sweep 2026-05-18; new HF candidate selected, not
+exported or deployed yet.
+
+Artifact:
+
+- `training/eval-runs/phase4h-residual-curriculum/README.md`
+
+Goal:
+
+Train against the specific residual failure shapes from Phase 4G without
+reintroducing semantic-invalid output:
+
+- generic endpoint and middle-count copying;
+- generic count/duration copying;
+- word durations such as `half a minute` and `ninety seconds`;
+- work/rest requests that mention `around`, `bookend`, or `between` but must
+  not use generic `+` grouping;
+- label-copy misses.
+
+Dataset changes:
+
+- Added opt-in `--phase4h-residual-data`.
+- Added train-only categories:
+  - `phase4h-generic-endpoint`: 112 rows
+  - `phase4h-count-duration`: 62 rows
+  - `phase4h-work-rest-contrast`: 55 rows
+  - `phase4h-plus-work-rest-guard`: 32 rows
+  - `phase4h-label-copy`: 12 rows
+- Expanded dataset now has 1467 train rows, 207 validation rows, and 62 hard
+  validation rows.
+- Validation stayed unchanged, so Phase 4G and Phase 4H are comparable.
+
+Training sweep summary:
+
+| Run | Decode | Strict | Parseable | Semantic-invalid | Result |
+| --- | --- | ---: | ---: | ---: | --- |
+| Phase 4G source | beam 4 | 175/207 | 206/207 | 0/207 | previous candidate |
+| residual weighted, seed 7 | beam 4 | 175/207 | 206/207 | 0/207 | tied early, then regressed |
+| residual weighted, seed 11 | beam 4 | 175/207 | 206/207 | 0/207 | safe but flat |
+| residual-only curriculum | beam 4 | 169/207 | 196/207 | 11/207 | learned hard behaviors but broke syntax |
+| replay cleanup | beam 4 | 180/207 | 203/207 | 4/207 | aggregate gain, still unsafe |
+| invalid cleanup | beam 4 | 182/207 | 205/207 | 2/207 | count-middle invalids fixed |
+| plus-guard cleanup | beam 4 | 183/207 | 205/207 | 2/207 | best beam-4 aggregate |
+| plus-guard cleanup | beam 8 | 185/207 | 207/207 | 0/207 | best safe HF result |
+
+Best HF checkpoint:
+
+```text
+training/seq2seq-runs/phase4h-plus-guard-cleanup-lr1e-6/checkpoint-500
+```
+
+Best measured decode:
+
+```text
+num_beams=8, early_stopping=true
+```
+
+Beam 12 and beam 16 did not improve beyond the beam-8 score.
+
+Conclusions:
+
+- The tiny model can learn more than Phase 4G showed; residual curriculum plus
+  replay moved the safe HF result from 175/207 to 185/207.
+- Isolated hard-row training is unsafe. It improved hard categories but
+  reintroduced illegal grouped work/rest syntax.
+- Beam 8 matters for the new checkpoint: beam 4 leaves two semantic-invalid
+  outputs, while beam 8 selects valid alternatives.
+- The model still does not pass every validation row. Remaining misses are
+  valid-but-wrong outputs concentrated in word durations, generic endpoint
+  copying, `around` work/rest details, and one label-copy row.
+
+Next task:
+
+- Export `phase4h-plus-guard-cleanup-lr1e-6/checkpoint-500` to ONNX.
+- Apply existing q8 encoder + q4 decoder quantization recipe.
+- Test raw browser ONNX with beam 8.
+- Measure beam-8 latency before changing production constants.
+- Promote only if browser output matches the Python/HF safety profile.
 
 ### Phase 5: Quantization-Aware Continuation
 

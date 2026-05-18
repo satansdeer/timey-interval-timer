@@ -5,6 +5,7 @@
   "dslEndToken": true,
   "phase4HardData": true,
   "userRequestExpansion": true,
+  "phase4HResidualData": true,
   "qwen3NoThink": false,
   "validationRatio": 0.18,
   "files": {
@@ -14,7 +15,7 @@
     "hardValidation": "timer-sft-hard-validation.jsonl"
   },
   "all": {
-    "count": 1401,
+    "count": 1674,
     "categories": {
       "core-regression": 8,
       "individual-middle": 144,
@@ -33,11 +34,16 @@
       "user-around-regression-guard": 86,
       "user-generic-surface": 50,
       "user-duration-surface": 14,
-      "user-label-surface": 16
+      "user-label-surface": 16,
+      "phase4h-generic-endpoint": 112,
+      "phase4h-count-duration": 62,
+      "phase4h-work-rest-contrast": 55,
+      "phase4h-plus-work-rest-guard": 32,
+      "phase4h-label-copy": 12
     }
   },
   "train": {
-    "count": 1194,
+    "count": 1467,
     "categories": {
       "core-regression": 6,
       "individual-middle": 118,
@@ -56,7 +62,12 @@
       "user-around-regression-guard": 73,
       "user-generic-surface": 42,
       "user-duration-surface": 12,
-      "user-label-surface": 13
+      "user-label-surface": 13,
+      "phase4h-generic-endpoint": 112,
+      "phase4h-count-duration": 62,
+      "phase4h-work-rest-contrast": 55,
+      "phase4h-plus-work-rest-guard": 32,
+      "phase4h-label-copy": 12
     }
   },
   "validation": {
