@@ -77,6 +77,7 @@ const WORD_NUMBERS = {
 export function buildTimerSftExamples({
   dslEndToken = false,
   includePhase4HardData = false,
+  includeUserRequestExpansion = false,
   targetFormat = DEFAULT_TARGET_FORMAT,
   userFormat = DEFAULT_USER_FORMAT,
   systemPrompt = null,
@@ -92,7 +93,7 @@ export function buildTimerSftExamples({
       ? `${baseSystemPrompt} Finish with ${DSL_END_TOKEN} on its own final line.`
       : baseSystemPrompt;
 
-  for (const spec of buildSpecs({ includePhase4HardData })) {
+  for (const spec of buildSpecs({ includePhase4HardData, includeUserRequestExpansion })) {
     if (userFormat === "natural" && spec.correctionRequest) continue;
 
     const assistantContent =
@@ -378,7 +379,7 @@ export function readAssistantTarget(record) {
     : parseTimerJson(assistant.content, `${record.id}: assistant target`).timers;
 }
 
-function buildSpecs({ includePhase4HardData = false } = {}) {
+function buildSpecs({ includePhase4HardData = false, includeUserRequestExpansion = false } = {}) {
   const specs = [];
   const add = (category, request, timers, options = {}) => {
     specs.push({ category, request, timers, ...options });
@@ -395,6 +396,7 @@ function buildSpecs({ includePhase4HardData = false } = {}) {
   addExplicitLabelCopyStressSpecs(add);
   addExplicitLabelCopyTrainOnlySpecs(add);
   if (includePhase4HardData) addPhase4HardGenericSpecs(add);
+  if (includeUserRequestExpansion) addUserRequestExpansionSpecs(add);
 
   return specs;
 }
@@ -1222,6 +1224,279 @@ function addPhase4HardGenericTimerSpec(
       sourceCategory: "generic-timers",
     },
   );
+}
+
+function addUserRequestExpansionSpecs(add) {
+  addUserAroundContrastSpecs(add);
+  addUserGenericSurfaceSpecs(add);
+  addUserDurationSurfaceSpecs(add);
+  addUserLabelSurfaceSpecs(add);
+}
+
+function addUserAroundContrastSpecs(add) {
+  const endpoints = [
+    [8, 8],
+    [5, 5],
+    [10, 8],
+    [12, 9],
+  ];
+  const counts = [4, 5, 6, 8];
+  const durations = [30, 45, 60, 90];
+  const orders = [
+    { order: ["rest", "work"], words: "rest/work", phrase: "rest then work" },
+    { order: ["work", "rest"], words: "work/rest", phrase: "work then rest" },
+  ];
+
+  let variant = 0;
+  for (const [warmupMinutes, cooldownMinutes] of endpoints) {
+    for (const count of counts) {
+      for (const durationSeconds of durations) {
+        for (const order of orders) {
+          const timers = withEndpoints(
+            warmupMinutes,
+            cooldownMinutes,
+            alternating(count, order.order, durationSeconds, workRestLabels()),
+          );
+          const duration = userDurationText(durationSeconds, variant);
+          const countText = wordOrNumber(count, variant);
+          const templates = [
+            `${minuteText(warmupMinutes, variant)} warmup and ${minuteText(cooldownMinutes, variant + 1)} cooldown around ${countText} ${duration} ${order.words} timers`,
+            `bookend ${countText} ${duration} alternating intervals with ${warmupMinutes} min warmup and ${cooldownMinutes} min cooldown, ${order.phrase}`,
+            `put ${countText} ${duration} ${order.words} timers between a ${warmupMinutes} minute warmup and ${cooldownMinutes} minute cooldown`,
+            `start with warmup ${warmupMinutes} minutes, surround the ${countText} middle ${duration} intervals with cooldown ${cooldownMinutes} minutes, alternate ${order.phrase}`,
+            `not plain timers: ${warmupMinutes} min warmup, ${countText} ${duration} work/rest intervals in the middle, ${cooldownMinutes} min cooldown`,
+          ];
+          addUserExpansionSpec(add, "user-around-contrast", templates[variant % templates.length], timers, variant);
+          variant += 1;
+        }
+      }
+    }
+  }
+
+  const pairCases = [
+    [8, 8, 4, 30, 15, ["work", "rest"]],
+    [5, 5, 6, 45, 15, ["rest", "work"]],
+    [10, 8, 5, 60, 30, ["work", "rest"]],
+    [12, 9, 3, 90, 30, ["rest", "work"]],
+    [6, 6, 8, 20, 10, ["work", "rest"]],
+    [4, 4, 10, 30, 15, ["rest", "work"]],
+  ];
+  const pairTemplates = [
+    ({ warmup, cooldown, count, work, rest, first, second }) =>
+      `warmup ${warmup} minutes and cooldown ${cooldown} minutes around ${count} rounds, each round ${work} work and ${rest} rest, start with ${first}`,
+    ({ warmup, cooldown, count, work, rest }) =>
+      `bookend ${count} full blocks with ${warmup} min warmup and ${cooldown} min cooldown; every block has ${work} work plus ${rest} rest`,
+    ({ warmup, cooldown, count, work, rest, first, second }) =>
+      `${count} ${first}/${second} pairs between ${warmup} minute warmup and ${cooldown} minute cooldown, ${work} work ${rest} rest`,
+  ];
+
+  for (const [warmupMinutes, cooldownMinutes, count, workSeconds, restSeconds, order] of pairCases) {
+    const first = order[0];
+    const second = order[1];
+    const timers = withEndpoints(
+      warmupMinutes,
+      cooldownMinutes,
+      pairs(count, order, workSeconds, restSeconds, workRestLabels()),
+    );
+    const template = pairTemplates[variant % pairTemplates.length];
+    addUserExpansionSpec(
+      add,
+      "user-around-contrast",
+      template({
+        warmup: warmupMinutes,
+        cooldown: cooldownMinutes,
+        count: wordOrNumber(count, variant),
+        work: userDurationText(workSeconds, variant),
+        rest: userDurationText(restSeconds, variant + 1),
+        first,
+        second,
+      }),
+      timers,
+      variant,
+    );
+    variant += 1;
+  }
+}
+
+function addUserGenericSurfaceSpecs(add) {
+  const cases = [
+    [300, 5, 60, 300],
+    [480, 4, 60, 480],
+    [240, 5, 30, 240],
+    [90, 6, 10, 90],
+    [20, 7, 5, 20],
+    [75, 6, 15, 75],
+    [30, 5, 10, 60],
+    [150, 3, 20, 210],
+    [420, 3, 45, 420],
+    [180, 5, 15, 240],
+  ];
+  const templates = [
+    ({ left, middleCount, middle, right }) =>
+      `plain timers only: ${left}, then ${middleCount} timers of ${middle}, then ${right}`,
+    ({ left, middleCount, middle, right }) =>
+      `no labels, no warmup: start with ${left}, do ${middleCount} ${middle} timers, finish with ${right}`,
+    ({ left, middleCount, middle, right }) =>
+      `make the outside generic timers ${left} and ${right}; put ${middleCount} ${middle} timers inside`,
+    ({ left, middleCount, middle, right }) =>
+      `${left} once, ${middle} ${middleCount} times, ${right} once, all plain timers`,
+    ({ left, middleCount, middle, right }) =>
+      `timer sequence for practice: one ${left}, ${middleCount} short ${middle} timers, one ${right}`,
+  ];
+
+  let variant = 0;
+  for (const [leftSeconds, middleCount, middleSeconds, rightSeconds] of cases) {
+    for (let offset = 0; offset < templates.length; offset += 1) {
+      const template = templates[(variant + offset) % templates.length];
+      addUserExpansionSpec(
+        add,
+        "user-generic-surface",
+        template({
+          left: userDurationText(leftSeconds, variant + offset),
+          middleCount: wordOrNumber(middleCount, variant + offset),
+          middle: userDurationText(middleSeconds, variant + offset + 1),
+          right: userDurationText(rightSeconds, variant + offset + 2),
+        }),
+        genericTimers([
+          [1, leftSeconds],
+          [middleCount, middleSeconds],
+          [1, rightSeconds],
+        ]),
+        variant + offset,
+      );
+    }
+    variant += templates.length;
+  }
+}
+
+function addUserDurationSurfaceSpecs(add) {
+  const durationCases = [
+    ["half a minute", 30],
+    ["a half minute", 30],
+    ["forty five seconds", 45],
+    ["0:45", 45],
+    ["seventy five seconds", 75],
+    ["1 min 15 sec", 75],
+    ["one and a half minutes", 90],
+    ["ninety seconds", 90],
+    ["two and a half minutes", 150],
+    ["150 seconds", 150],
+  ];
+  const counts = [3, 4, 5, 6];
+
+  let variant = 0;
+  for (const [phrase, seconds] of durationCases) {
+    const count = counts[variant % counts.length];
+    const countText = wordOrNumber(count, variant);
+    const templates = [
+      `${countText} timers, ${phrase} each`,
+      `make ${countText} plain intervals lasting ${phrase}`,
+      `only ${countText} timers; every one is ${phrase}`,
+      `I need ${countText} standalone ${phrase} timers`,
+    ];
+    addUserExpansionSpec(
+      add,
+      "user-duration-surface",
+      templates[variant % templates.length],
+      genericTimers([[count, seconds]]),
+      variant,
+    );
+    variant += 1;
+  }
+
+  const mixedCases = [
+    ["one and a half minutes", 90, "thirty seconds", 30],
+    ["0:45", 45, "two minutes", 120],
+    ["75 sec", 75, "15 sec", 15],
+    ["2 min 30 sec", 150, "20 seconds", 20],
+  ];
+  for (const [firstPhrase, firstSeconds, secondPhrase, secondSeconds] of mixedCases) {
+    const timers = [
+      timer("Prep", firstSeconds, "other"),
+      timer("Rest", secondSeconds, "rest"),
+      timer("Work", firstSeconds, "work"),
+    ];
+    const templates = [
+      `prep for ${firstPhrase}, rest ${secondPhrase}, then work for ${firstPhrase}`,
+      `sequence: ${firstPhrase} prep, ${secondPhrase} rest, ${firstPhrase} work`,
+    ];
+    addUserExpansionSpec(add, "user-duration-surface", templates[variant % templates.length], timers, variant);
+    variant += 1;
+  }
+}
+
+function addUserLabelSurfaceSpecs(add) {
+  const cases = [
+    [
+      ["Breathing reset", 30, "other"],
+      ["Dead bug", 45, "other"],
+      ["Recovery", 30, "rest"],
+      ["Side plank", 45, "other"],
+    ],
+    [
+      ["Jump rope", 60, "other"],
+      ["Rest", 20, "rest"],
+      ["Shadow boxing", 60, "other"],
+      ["Rest", 20, "rest"],
+    ],
+    [
+      ["Prep", 90, "other"],
+      ["Hard effort", 30, "work"],
+      ["Easy spin", 45, "rest"],
+      ["Warmdown", 120, "cooldown"],
+    ],
+    [
+      ["Round A", 40, "other"],
+      ["Round B", 40, "other"],
+      ["Shake out", 20, "other"],
+      ["Recover", 30, "rest"],
+    ],
+  ];
+  const templates = [
+    (parts) => `set these named timers: ${parts.join(", ")}`,
+    (parts) => `use exact labels and order: ${parts.join("; ")}`,
+    (parts) => `create this sequence only: ${parts.join(" / ")}`,
+    (parts) => `named workout timers, no defaults: ${parts.join(", then ")}`,
+  ];
+
+  let variant = 0;
+  for (const item of cases) {
+    for (let rotation = 0; rotation < templates.length; rotation += 1) {
+      const timers = item.map(([label, seconds, kind]) => timer(label, seconds, kind));
+      const parts = timers.map((entry, index) => explicitSequencePart(entry, variant + rotation + index));
+      addUserExpansionSpec(
+        add,
+        "user-label-surface",
+        templates[(variant + rotation) % templates.length](parts),
+        timers,
+        variant + rotation,
+      );
+    }
+    variant += templates.length;
+  }
+}
+
+function addUserExpansionSpec(add, category, request, timers, variant) {
+  const validation = variant % 7 === 0;
+  add(category, request, timers, {
+    split: validation ? "validation" : "train",
+    hardValidation: validation,
+    source: "phase6-user-request",
+    sourceCategory: category,
+  });
+}
+
+function userDurationText(seconds, variant = 0) {
+  const special = {
+    30: ["30 seconds", "half a minute", "0:30"],
+    45: ["45 seconds", "forty five seconds", "0:45"],
+    75: ["75 seconds", "1 min 15 sec", "one minute fifteen seconds"],
+    90: ["90 seconds", "1 minute 30 seconds", "one and a half minutes"],
+    150: ["150 seconds", "2 min 30 sec", "two and a half minutes"],
+  };
+  const options = special[seconds];
+  if (options) return options[variant % options.length];
+  return durationText(seconds);
 }
 
 function addCorrectionSpecs(add) {

@@ -78,8 +78,23 @@ Current dataset:
 - Train rows: 771
 - Validation rows: 145
 - Total rows: 916
-- Dataset version in `scripts/training/timer-sft-lib.mjs`: `2026-05-17`
+- Dataset version in `scripts/training/timer-sft-lib.mjs`: `2026-05-18`
 - Target format: compressed Timey DSL with final `END` token for training.
+
+Current opt-in expanded dataset:
+
+- Dataset output directory:
+  `training/generated-dsl-compressed-end-user-requests/`
+- Build flags:
+  `--phase4-hard-data --user-request-expansion`
+- Train rows: 1121
+- Validation rows: 194
+- Hard validation rows: 49
+- New categories:
+  - `user-around-contrast`
+  - `user-generic-surface`
+  - `user-duration-surface`
+  - `user-label-surface`
 
 Current validation categories:
 
@@ -768,6 +783,70 @@ Follow-up semantic constraint status:
   fallback candidates.
 - Next useful model work is teacher/contrastive distillation with many negative
   examples where warmup/cooldown and work/rest must keep the old syntax.
+
+### Phase 4C: User Request Expansion
+
+Status: completed initial expansion 2026-05-18; no checkpoint promoted.
+
+Hypothesis:
+
+Real-user robustness needs broader phrasing than the original synthetic
+templates, especially contrast rows where words like `around`, `bookend`, and
+`between` appear but the correct output is not the compact generic `around`
+syntax.
+
+Implemented dataset flag:
+
+```sh
+node scripts/training/build-timer-sft.mjs \
+  --target-format dsl \
+  --user-format natural \
+  --dsl-end-token \
+  --phase4-hard-data \
+  --user-request-expansion \
+  --out-dir training/generated-dsl-compressed-end-user-requests
+```
+
+Added categories:
+
+- `user-around-contrast`
+  - warmup/cooldown plus alternating or paired work/rest middle timers
+  - wording intentionally includes `around`, `bookend`, `surround`, or
+    `between`
+  - target must stay old syntax, not grouped generic syntax
+- `user-generic-surface`
+  - plain timer sequences with generic bookends and middle groups
+  - target uses `around` or `+` when appropriate
+- `user-duration-surface`
+  - variants such as `half a minute`, `0:45`, `one and a half minutes`
+- `user-label-surface`
+  - named timer sequences that must preserve exact labels and order
+
+Validation:
+
+- Dataset validation passed: 1364 total records.
+- Hard validation rows: 49.
+
+Run artifact:
+
+- `training/eval-runs/phase6-user-request-expansion/README.md`
+
+Measured result:
+
+| Run | Best strict validation | Useful gain | Regression |
+| --- | ---: | --- | --- |
+| `phase6-user-request-contrast-lr1e-5` | 156/194 at step 500 | `user-around-contrast` improved 8/20 to 15/20 | `pairs`, `count-pairs`, and `individual-middle` regressed |
+| `phase6-user-request-balanced-lr5e-6` | 154/194 at step 500 | `user-around-contrast` improved 8/20 to 12/20 | no pair/middle replay regression, but no generic-position gain |
+
+Conclusion:
+
+- Keep the expanded dataset and category-level eval.
+- Do not promote either checkpoint.
+- The small model can learn some negative contrast behavior.
+- The small model still does not reliably compose generic bookend/list
+  sequences from broad natural wording.
+- Keep deterministic generic-position repair in the browser path.
+- Treat `user-generic-surface` as the next repair/distillation target.
 
 ### Phase 5: Quantization-Aware Continuation
 

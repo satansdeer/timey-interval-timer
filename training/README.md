@@ -25,6 +25,23 @@ The current split is 771 train rows and 145 validation rows. It includes
 count-stress categories for exact N middle intervals, exact work/rest pairs,
 plain repeated timers, alternating timers, and label copying.
 
+There is also an opt-in expanded user-request dataset for focused experiments:
+
+```sh
+node scripts/training/build-timer-sft.mjs \
+  --target-format dsl \
+  --user-format natural \
+  --dsl-end-token \
+  --phase4-hard-data \
+  --user-request-expansion \
+  --out-dir training/generated-dsl-compressed-end-user-requests
+```
+
+That dataset currently has 1121 train rows, 194 validation rows, and 49 hard
+validation rows. It adds broad phrasing and contrast categories for
+`user-around-contrast`, `user-generic-surface`, `user-duration-surface`, and
+`user-label-surface`.
+
 ## DSL Format
 
 Assistant targets use the shared timer shorthand parser in `timer-dsl.js`.
@@ -160,9 +177,14 @@ model misses. Symmetric generic bookends use `around`; asymmetric generic
 sequences use `+`. This is intended to reduce endpoint-copy and middle-run
 duplication errors during the next focused continuation run.
 
+The user-request expansion was measured in
+`training/eval-runs/phase6-user-request-expansion/`. It improved the new
+`user-around-contrast` category, but did not fix `user-generic-surface` or
+`generic-position`, so no checkpoint from that phase was promoted.
+
 ## Browser Export
 
-The deployed browser model is a selective q8 ONNX export of the production
+The deployed browser model is a mixed q8/q4 ONNX export of the production
 checkpoint:
 
 ```text
@@ -170,10 +192,9 @@ models/timey-t5-efficient-tiny/
 ```
 
 It contains tokenizer/config files at the model root and the two ONNX files used
-by the browser runtime. The encoder is q8. The decoder is dynamically quantized
-except for `/decoder/shared/Gather` and `/lm_head/MatMul`, which keeps the shared
-embedding/lm-head weight fp32. Full signed and unsigned q8 decoder quantization
-changed the browser beam output for positional generic prompts.
+by the browser runtime. The encoder is q8. The decoder is q4 for supported
+MatMul/Gather weights except for `/decoder/shared/Gather` and
+`/lm_head/MatMul`, which stay fp32 because those weights are sensitive.
 
 - `onnx/encoder_model_quantized.onnx`
 - `onnx/decoder_model_quantized.onnx`

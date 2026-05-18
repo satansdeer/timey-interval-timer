@@ -17,6 +17,7 @@ const outDir = resolve(process.cwd(), args.outDir);
 const allRecords = buildTimerSftExamples({
   dslEndToken: args.dslEndToken,
   includePhase4HardData: args.phase4HardData,
+  includeUserRequestExpansion: args.userRequestExpansion,
   targetFormat: args.targetFormat,
   userFormat: args.userFormat,
   systemPrompt: getSystemPrompt(args),
@@ -41,6 +42,7 @@ await writeFile(
       userFormat: args.userFormat,
       dslEndToken: args.targetFormat === "dsl" ? args.dslEndToken : false,
       phase4HardData: args.phase4HardData,
+      userRequestExpansion: args.userRequestExpansion,
       qwen3NoThink: args.qwen3NoThink,
       validationRatio: args.validationRatio,
       files: {
@@ -75,6 +77,7 @@ function parseArgs(argv) {
     outDir: "training/generated",
     dslEndToken: false,
     phase4HardData: false,
+    userRequestExpansion: false,
     qwen3NoThink: false,
     targetFormat: DEFAULT_TARGET_FORMAT,
     userFormat: DEFAULT_USER_FORMAT,
@@ -89,6 +92,8 @@ function parseArgs(argv) {
       parsed.dslEndToken = true;
     } else if (arg === "--phase4-hard-data") {
       parsed.phase4HardData = true;
+    } else if (arg === "--user-request-expansion") {
+      parsed.userRequestExpansion = true;
     } else if (arg === "--qwen3-no-think") {
       parsed.qwen3NoThink = true;
     } else if (arg === "--target-format") {
@@ -126,6 +131,7 @@ Options:
   --out-dir <path>             Output directory (default: training/generated)
   --dsl-end-token              End DSL assistant targets with END on a final line
   --phase4-hard-data           Include opt-in hard generic-position/generic-timer rows
+  --user-request-expansion     Include opt-in broad user-request and contrast rows
   --qwen3-no-think             Append /no_think to the system prompt for Qwen3 non-thinking mode
   --target-format <json|dsl>   Assistant target format (default: json)
   --user-format <app|natural>  App payload or raw natural-language user turns (default: app)

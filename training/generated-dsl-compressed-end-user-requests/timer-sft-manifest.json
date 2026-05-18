@@ -1,0 +1,92 @@
+{
+  "datasetVersion": "2026-05-18",
+  "targetFormat": "dsl",
+  "userFormat": "natural",
+  "dslEndToken": true,
+  "phase4HardData": true,
+  "userRequestExpansion": true,
+  "qwen3NoThink": false,
+  "validationRatio": 0.18,
+  "files": {
+    "all": "timer-sft-all.jsonl",
+    "train": "timer-sft-train.jsonl",
+    "validation": "timer-sft-validation.jsonl",
+    "hardValidation": "timer-sft-hard-validation.jsonl"
+  },
+  "all": {
+    "count": 1315,
+    "categories": {
+      "core-regression": 8,
+      "individual-middle": 144,
+      "pairs": 48,
+      "generic-timers": 9,
+      "generic-position": 91,
+      "explicit-sequence": 5,
+      "count-middle": 196,
+      "count-pairs": 120,
+      "count-generic": 117,
+      "explicit-label-copy": 120,
+      "explicit-label-copy-train": 58,
+      "generic-position-hard": 130,
+      "generic-timers-hard": 55,
+      "user-around-contrast": 134,
+      "user-generic-surface": 50,
+      "user-duration-surface": 14,
+      "user-label-surface": 16
+    }
+  },
+  "train": {
+    "count": 1121,
+    "categories": {
+      "core-regression": 6,
+      "individual-middle": 118,
+      "pairs": 39,
+      "generic-timers": 7,
+      "generic-position": 86,
+      "explicit-sequence": 4,
+      "count-middle": 161,
+      "count-pairs": 98,
+      "count-generic": 96,
+      "explicit-label-copy": 98,
+      "explicit-label-copy-train": 58,
+      "generic-position-hard": 120,
+      "generic-timers-hard": 49,
+      "user-around-contrast": 114,
+      "user-generic-surface": 42,
+      "user-duration-surface": 12,
+      "user-label-surface": 13
+    }
+  },
+  "validation": {
+    "count": 194,
+    "categories": {
+      "core-regression": 2,
+      "individual-middle": 26,
+      "pairs": 9,
+      "generic-timers": 2,
+      "generic-position": 5,
+      "explicit-sequence": 1,
+      "count-middle": 35,
+      "count-pairs": 22,
+      "count-generic": 21,
+      "explicit-label-copy": 22,
+      "generic-position-hard": 10,
+      "generic-timers-hard": 6,
+      "user-around-contrast": 20,
+      "user-generic-surface": 8,
+      "user-duration-surface": 2,
+      "user-label-surface": 3
+    }
+  },
+  "hardValidation": {
+    "count": 49,
+    "categories": {
+      "generic-position-hard": 10,
+      "generic-timers-hard": 6,
+      "user-around-contrast": 20,
+      "user-generic-surface": 8,
+      "user-duration-surface": 2,
+      "user-label-surface": 3
+    }
+  }
+}
