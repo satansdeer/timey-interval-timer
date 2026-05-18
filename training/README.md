@@ -46,6 +46,24 @@ validation rows. It adds broad phrasing and contrast categories for
 residual categories for generic endpoint copying, word-duration copying,
 work/rest semantic guards, and label-copy cleanup.
 
+For browser-residual experiments, add the raw browser miss rows:
+
+```sh
+node scripts/training/build-timer-sft.mjs \
+  --target-format dsl \
+  --user-format natural \
+  --dsl-end-token \
+  --phase4-hard-data \
+  --user-request-expansion \
+  --phase4h-residual-data \
+  --phase4i-browser-residual-data \
+  --out-dir training/generated-dsl-compressed-end-phase4i-browser
+```
+
+That dataset has 1543 train rows, 207 validation rows, and 62 hard validation
+rows. The extra 76 train rows come from actual raw browser mismatches for
+generic count/duration and generic-position prompts.
+
 ## DSL Format
 
 Assistant targets use the shared timer shorthand parser in `timer-dsl.js`.
@@ -203,24 +221,30 @@ The residual curriculum pass is recorded in
 `training/seq2seq-runs/phase4h-plus-guard-cleanup-lr1e-6/checkpoint-500`.
 With beam 4 it reaches 183/207 strict, 205/207 parseable, and 2/207
 semantic-invalid. With beam 8 it reaches 185/207 strict, 207/207 parseable,
-and 0/207 semantic-invalid. This is the current HF export candidate, but it
-requires raw browser ONNX testing with beam 8 before promotion.
+and 0/207 semantic-invalid. This checkpoint has been exported to the browser
+runtime as the current local tiny model.
+
+The browser-residual Phase 4I pass is recorded in
+`training/eval-runs/phase4i-browser-raw-residual/`. It trained on actual raw
+browser failures from the Phase 4H export. The best Python/HF step reached
+187/207 strict with 0 semantic-invalid, but the exported browser checkpoint did
+not improve the raw browser gate, so Phase 4I was not promoted.
 
 ## Results
 
-The production checkpoint is:
+The current local browser checkpoint is:
 
 ```text
-training/seq2seq-runs/t5-efficient-tiny-positional-generic-lr1e-5/checkpoint-250
+training/seq2seq-runs/phase4h-plus-guard-cleanup-lr1e-6/checkpoint-500
 ```
 
 Current local scores:
 
-| Model/run | Decode | Strict exact | Semantic exact |
-| --- | --- | --- | --- |
-| `google/t5-efficient-tiny`, positional-generic candidate | beam 4 | 139/145 | 139/145 |
-| same checkpoint, excluding provably repairable generic rows | beam 4 | 139/139 | 139/139 |
-| `google/flan-t5-small`, pre-label-copy checkpoint | beam 4 | 133/139 | 133/139 |
+| Model/run | Decode | Strict exact | Parseable | Semantic-invalid |
+| --- | --- | ---: | ---: | ---: |
+| deployed pre-Phase4H checkpoint | beam 4 | 159/207 | 205/207 | 0/207 |
+| Phase 4H checkpoint | beam 8 | 185/207 | 207/207 | 0/207 |
+| Phase 4I browser-residual best HF step | beam 8 | 187/207 | 207/207 | 0/207 |
 
 The compressed repeat syntax removed the long-output counting failures that made
 the tiny model unreliable. The label-copy continuation fixed the remaining
@@ -242,6 +266,10 @@ under beam 8, but did not make the model perfect. The remaining misses are
 valid-but-wrong outputs around word durations, generic endpoint copying, and
 some work/rest order or duration details.
 
+The Phase 4I browser-residual rows did not transfer into better raw ONNX browser
+behavior. Repaired production output still passes the real-browser categories,
+but raw browser output remains the limiting metric for model-first promotion.
+
 The user-request expansion was measured in
 `training/eval-runs/phase6-user-request-expansion/`. It improved the new
 `user-around-contrast` category, but did not fix `user-generic-surface` or
@@ -249,16 +277,16 @@ The user-request expansion was measured in
 plain-timer `user-generic-surface` cases are now covered by deterministic
 generic-sequence repair in the browser path.
 
-The next model-first experiment should focus on first-pass correctness for
-generic endpoints, middle counts, and duration-copy errors under the canonical
-`+` syntax. A checkpoint remains blocked from promotion unless raw Python/HF
-semantic-invalid is 0/207 and raw browser ONNX testing matches the same
-category-level behavior.
+The next model-first experiment should not just repeat exact residual rows. It
+should either improve the training objective/curriculum around count-duration
+copying, or change architecture/decoding so the browser model cannot collapse
+generic endpoint and middle-duration slots. A checkpoint remains blocked from
+model-first promotion unless raw Python/HF semantic-invalid is 0/207 and raw
+browser ONNX testing improves by category.
 
 ## Browser Export
 
-The deployed browser model is a mixed q8/q4 ONNX export of the production
-checkpoint:
+The local browser model is a mixed q8/q4 ONNX export of the current checkpoint:
 
 ```text
 models/timey-t5-efficient-tiny/

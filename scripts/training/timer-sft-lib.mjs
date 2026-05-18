@@ -78,6 +78,7 @@ export function buildTimerSftExamples({
   includePhase4HardData = false,
   includeUserRequestExpansion = false,
   includePhase4HResidualData = false,
+  includePhase4IBrowserResidualData = false,
   targetFormat = DEFAULT_TARGET_FORMAT,
   userFormat = DEFAULT_USER_FORMAT,
   systemPrompt = null,
@@ -93,7 +94,12 @@ export function buildTimerSftExamples({
       ? `${baseSystemPrompt} Finish with ${DSL_END_TOKEN} on its own final line.`
       : baseSystemPrompt;
 
-  for (const spec of buildSpecs({ includePhase4HardData, includeUserRequestExpansion, includePhase4HResidualData })) {
+  for (const spec of buildSpecs({
+    includePhase4HardData,
+    includeUserRequestExpansion,
+    includePhase4HResidualData,
+    includePhase4IBrowserResidualData,
+  })) {
     if (userFormat === "natural" && spec.correctionRequest) continue;
 
     const assistantContent =
@@ -105,7 +111,7 @@ export function buildTimerSftExamples({
         ? spec.request
         : JSON.stringify(spec.payload ?? { correctionRequest: false, userRequest: spec.request });
     const duplicateKey = `${userContent}\n${assistantContent}`;
-    if (seen.has(duplicateKey)) continue;
+    if (seen.has(duplicateKey) && !spec.duplicateOk) continue;
     seen.add(duplicateKey);
 
     const id = `timer-sft-${String(records.length + 1).padStart(4, "0")}`;
@@ -128,6 +134,7 @@ export function buildTimerSftExamples({
         ...(spec.source ? { source: spec.source } : {}),
         ...(spec.sourceCategory ? { sourceCategory: spec.sourceCategory } : {}),
         ...(spec.hardValidation ? { hardValidation: true } : {}),
+        ...(spec.duplicateOk ? { duplicateOk: true } : {}),
       },
     };
 
@@ -374,6 +381,7 @@ function buildSpecs({
   includePhase4HardData = false,
   includeUserRequestExpansion = false,
   includePhase4HResidualData = false,
+  includePhase4IBrowserResidualData = false,
 } = {}) {
   const specs = [];
   const add = (category, request, timers, options = {}) => {
@@ -393,6 +401,7 @@ function buildSpecs({
   if (includePhase4HardData) addPhase4HardGenericSpecs(add);
   if (includeUserRequestExpansion) addUserRequestExpansionSpecs(add);
   if (includePhase4HResidualData) addPhase4HResidualSpecs(add);
+  if (includePhase4IBrowserResidualData) addPhase4IBrowserResidualSpecs(add);
 
   return specs;
 }
@@ -1968,6 +1977,196 @@ function addPhase4HLabelResidualSpecs(add) {
         sourceCategory: "label-copy-residual",
       });
       variant += 1;
+    }
+  }
+}
+
+function addPhase4IBrowserResidualSpecs(add) {
+  const cases = [
+    {
+      request: "2 two minute timers and 3 thirty second timers",
+      groups: [
+        [2, 120],
+        [3, 30],
+      ],
+      sourceCategory: "browser-raw-count-duration",
+    },
+    {
+      request: "Make 1 timer for 90 seconds and 4 timers for 15 seconds",
+      groups: [
+        [1, 90],
+        [4, 15],
+      ],
+      sourceCategory: "browser-raw-count-duration",
+    },
+    {
+      request: "one 5 minute timer, one 1 minute timer, one 30 second timer",
+      groups: [
+        [1, 300],
+        [1, 60],
+        [1, 30],
+      ],
+      sourceCategory: "browser-raw-count-duration",
+    },
+    {
+      request: "2 thirty second timers then 3 ten second timers",
+      groups: [
+        [2, 30],
+        [3, 10],
+      ],
+      sourceCategory: "browser-raw-count-duration",
+    },
+    {
+      request: "first and last timer 5minute, 5 one minute timers in between",
+      groups: [
+        [1, 300],
+        [5, 60],
+        [1, 300],
+      ],
+      sourceCategory: "browser-raw-generic-position",
+    },
+    {
+      request: "start and end with 5 minute timers, 5 one-minute timers in the middle",
+      groups: [
+        [1, 300],
+        [5, 60],
+        [1, 300],
+      ],
+      sourceCategory: "browser-raw-generic-position",
+    },
+    {
+      request: "put five one minute timers between two 5 minute timers",
+      groups: [
+        [1, 300],
+        [5, 60],
+        [1, 300],
+      ],
+      sourceCategory: "browser-raw-generic-position",
+    },
+    {
+      request: "two 5 minute timers with 5 one minute timers in between",
+      groups: [
+        [1, 300],
+        [5, 60],
+        [1, 300],
+      ],
+      sourceCategory: "browser-raw-generic-position",
+    },
+    {
+      request: "2 minute first and last timers, 8 thirty second timers between",
+      groups: [
+        [1, 120],
+        [8, 30],
+        [1, 120],
+      ],
+      sourceCategory: "browser-raw-generic-position",
+    },
+    {
+      request: "first and final timers should be 90 seconds, put 4 twenty second timers between them",
+      groups: [
+        [1, 90],
+        [4, 20],
+        [1, 90],
+      ],
+      sourceCategory: "browser-raw-generic-position",
+    },
+    {
+      request: "begin and finish with 3 minute timers, with 6 45 second timers in between",
+      groups: [
+        [1, 180],
+        [6, 45],
+        [1, 180],
+      ],
+      sourceCategory: "browser-raw-generic-position",
+    },
+    {
+      request: "outside timers are 4 minutes each, middle is 7 one minute timers",
+      groups: [
+        [1, 240],
+        [7, 60],
+        [1, 240],
+      ],
+      sourceCategory: "browser-raw-generic-position",
+    },
+    {
+      request: "first timer 30 seconds, last timer 30 seconds, and three 10 second timers in between",
+      groups: [
+        [1, 30],
+        [3, 10],
+        [1, 30],
+      ],
+      sourceCategory: "browser-raw-generic-position",
+    },
+    {
+      request: "start with 45 seconds, end with 45 seconds, put 5 fifteen second timers between",
+      groups: [
+        [1, 45],
+        [5, 15],
+        [1, 45],
+      ],
+      sourceCategory: "browser-raw-generic-position",
+    },
+    {
+      request: "make the first and last timers 2 minutes, and add 10 twenty second timers between them",
+      groups: [
+        [1, 120],
+        [10, 20],
+        [1, 120],
+      ],
+      sourceCategory: "browser-raw-generic-position",
+    },
+    {
+      request: "10 second first and last timers with 8 five second timers in between",
+      groups: [
+        [1, 10],
+        [8, 5],
+        [1, 10],
+      ],
+      sourceCategory: "browser-raw-generic-position",
+    },
+    {
+      request: "3 minutes at the beginning and end, with four 45 second timers inside",
+      groups: [
+        [1, 180],
+        [4, 45],
+        [1, 180],
+      ],
+      sourceCategory: "browser-raw-generic-position",
+    },
+    {
+      request: "outer timers 90 seconds, inside 6 ten second timers",
+      groups: [
+        [1, 90],
+        [6, 10],
+        [1, 90],
+      ],
+      sourceCategory: "browser-raw-generic-position",
+    },
+    {
+      request: "two 3 minute timers around 8 one minute timers",
+      groups: [
+        [1, 180],
+        [8, 60],
+        [1, 180],
+      ],
+      sourceCategory: "browser-raw-generic-position",
+    },
+  ];
+  const templates = [
+    ({ request }) => request,
+    ({ request }) => `copy the generic timer sequence exactly: ${request}`,
+    ({ request }) => `do not add extra timers and do not change durations: ${request}`,
+    ({ request }) => `raw browser residual, keep all stated endpoints and middle timers: ${request}`,
+  ];
+
+  for (const spec of cases) {
+    for (const template of templates) {
+      add("phase4i-browser-raw-residual", template(spec), genericTimers(spec.groups), {
+        split: "train",
+        duplicateOk: true,
+        source: "phase4i-browser-raw-residual",
+        sourceCategory: spec.sourceCategory,
+      });
     }
   }
 }

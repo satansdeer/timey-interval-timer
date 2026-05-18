@@ -9,7 +9,7 @@ import {
 
 export const TRANSFORMERS_PACKAGE_VERSION = "4.2.0";
 export const TRAINED_TINY_MODEL_ID = "timey-t5-efficient-tiny";
-export const TRAINED_TINY_MODEL_VERSION = "t5-efficient-tiny-positional-generic-lr1e-5-checkpoint-250-q8enc-q4dec-ort-beam-semantic-groups-generic-repair";
+export const TRAINED_TINY_MODEL_VERSION = "t5-efficient-tiny-phase4h-plus-guard-checkpoint-500-q8enc-q4dec-ort-beam8";
 export const TRAINED_TINY_MODEL_DTYPE = "q8-encoder-q4-decoder-opset21";
 export const TRAINED_TINY_MODEL_DEVICE = "wasm";
 export const TRANSFORMERS_CDN_URL = `https://cdn.jsdelivr.net/npm/@huggingface/transformers@${TRANSFORMERS_PACKAGE_VERSION}`;
@@ -25,7 +25,7 @@ export const TINY_TIMER_DECODER_URL = `/models/${TRAINED_TINY_MODEL_ID}/onnx/dec
 export const TINY_TIMER_INPUT_PREFIX = "translate timer request to Timey DSL: ";
 export const TINY_TIMER_MAX_INPUT_TOKENS = 160;
 export const TINY_TIMER_MAX_NEW_TOKENS = 64;
-export const TINY_TIMER_NUM_BEAMS = 4;
+export const TINY_TIMER_NUM_BEAMS = 8;
 export const TINY_TIMER_TOPK_PER_BEAM = 8;
 
 let transformersModulePromise = null;

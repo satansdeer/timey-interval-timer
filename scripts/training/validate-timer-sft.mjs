@@ -8,17 +8,18 @@ let total = 0;
 
 for (const path of args.paths) {
   const records = await readJsonl(resolve(process.cwd(), path));
-  const userRequests = new Set();
+  const userRequests = new Map();
 
   for (const record of records) {
     validateDatasetRecord(record);
     const request = record.metadata?.userRequest;
     if (request) {
       const normalized = request.toLowerCase().replace(/\s+/g, " ").trim();
-      if (userRequests.has(normalized)) {
+      const duplicateAllowed = Boolean(record.metadata?.duplicateOk);
+      if (userRequests.has(normalized) && !duplicateAllowed) {
         throw new Error(`${path}: duplicate user request "${request}"`);
       }
-      userRequests.add(normalized);
+      userRequests.set(normalized, userRequests.get(normalized) || duplicateAllowed);
     }
   }
 

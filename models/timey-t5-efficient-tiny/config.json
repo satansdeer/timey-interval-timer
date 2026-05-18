@@ -26,6 +26,6 @@
   "relative_attention_num_buckets": 32,
   "scale_decoder_outputs": true,
   "transformers_version": "4.57.6",
-  "use_cache": true,
+  "use_cache": false,
   "vocab_size": 32128
 }

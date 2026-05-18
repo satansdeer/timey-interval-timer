@@ -264,14 +264,47 @@ but wrong outputs, concentrated in:
 
 ## Promotion Status
 
-Do not deploy directly from this artifact yet.
+Promoted locally as the current browser model assets.
 
-Next steps:
+Exported checkpoint:
 
-1. Export `phase4h-plus-guard-cleanup-lr1e-6/checkpoint-500` to ONNX.
-2. Use the existing q8 encoder + q4 decoder export recipe.
-3. Test raw browser ONNX with beam 8, not beam 4.
-4. Measure latency impact of browser beam 8 before changing production.
-5. If browser beam 8 matches Python/HF behavior, update model constants and
-   service-worker model cache key.
+```text
+training/seq2seq-runs/phase4h-plus-guard-cleanup-lr1e-6/checkpoint-500
+```
 
+Runtime settings:
+
+```text
+TRAINED_TINY_MODEL_VERSION=t5-efficient-tiny-phase4h-plus-guard-checkpoint-500-q8enc-q4dec-ort-beam8
+TINY_TIMER_NUM_BEAMS=8
+TINY_TIMER_TOPK_PER_BEAM=8
+MODEL_CACHE_NAME=timey-model-t5-efficient-tiny-q8enc-q4dec-v2
+```
+
+Export/quantization:
+
+| Asset | Format | Bytes | SHA-256 |
+| --- | --- | ---: | --- |
+| `encoder_model_quantized.onnx` | q8 | 11,498,300 | `c086f2c818ca338f1e8365d5630a28468283fd774c08aa5b4b1d51e46f4fc540` |
+| `decoder_model_quantized.onnx` | q4 | 35,285,581 | `dd719902165b795aaaf215dcc8c4d34c8fe1c0b264f564d9d03dba0e83982f57` |
+
+Browser debug:
+
+- ORT Web session creation passed.
+- Prompt `8 minute timer, 4 one minute timers, 8 minute timer` produced raw
+  DSL `8m + 4x1m + 8m: Timer END`.
+- Repaired production real-browser categories passed.
+
+Raw browser gate:
+
+| Category | Repaired | Raw |
+| --- | ---: | ---: |
+| `core-regression` | 7/7 | 7/7 |
+| `explicit-label-copy` | 4/4 | 4/4 |
+| `generic-count` | 18/18 | 14/18 |
+| `generic-position` | 26/26 | 11/26 |
+
+Conclusion: Phase 4H is a better local browser checkpoint than the old
+positional-generic model, but it still does not meet the stricter model-first
+bar because raw browser output relies on deterministic repair for many generic
+count and positional generic requests.

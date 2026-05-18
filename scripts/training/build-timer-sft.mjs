@@ -19,6 +19,7 @@ const allRecords = buildTimerSftExamples({
   includePhase4HardData: args.phase4HardData,
   includeUserRequestExpansion: args.userRequestExpansion,
   includePhase4HResidualData: args.phase4HResidualData,
+  includePhase4IBrowserResidualData: args.phase4IBrowserResidualData,
   targetFormat: args.targetFormat,
   userFormat: args.userFormat,
   systemPrompt: getSystemPrompt(args),
@@ -45,6 +46,7 @@ await writeFile(
       phase4HardData: args.phase4HardData,
       userRequestExpansion: args.userRequestExpansion,
       phase4HResidualData: args.phase4HResidualData,
+      phase4IBrowserResidualData: args.phase4IBrowserResidualData,
       qwen3NoThink: args.qwen3NoThink,
       validationRatio: args.validationRatio,
       files: {
@@ -81,6 +83,7 @@ function parseArgs(argv) {
     phase4HardData: false,
     userRequestExpansion: false,
     phase4HResidualData: false,
+    phase4IBrowserResidualData: false,
     qwen3NoThink: false,
     targetFormat: DEFAULT_TARGET_FORMAT,
     userFormat: DEFAULT_USER_FORMAT,
@@ -99,6 +102,8 @@ function parseArgs(argv) {
       parsed.userRequestExpansion = true;
     } else if (arg === "--phase4h-residual-data") {
       parsed.phase4HResidualData = true;
+    } else if (arg === "--phase4i-browser-residual-data") {
+      parsed.phase4IBrowserResidualData = true;
     } else if (arg === "--qwen3-no-think") {
       parsed.qwen3NoThink = true;
     } else if (arg === "--target-format") {
@@ -138,6 +143,8 @@ Options:
   --phase4-hard-data           Include opt-in hard generic-position/generic-timer rows
   --user-request-expansion     Include opt-in broad user-request and contrast rows
   --phase4h-residual-data      Include train-only residual rows from current best misses
+  --phase4i-browser-residual-data
+                                Include train-only rows from raw browser misses
   --qwen3-no-think             Append /no_think to the system prompt for Qwen3 non-thinking mode
   --target-format <json|dsl>   Assistant target format (default: json)
   --user-format <app|natural>  App payload or raw natural-language user turns (default: app)

@@ -35,13 +35,13 @@ Last known production deploy:
 - Unique URL:
   <https://6a0a023455042e53b919a783--timey-interval-timer.netlify.app>
 
-Current browser model:
+Current checked-in local browser model:
 
 - App model id: `timey-t5-efficient-tiny`
 - Source checkpoint:
-  `training/seq2seq-runs/t5-efficient-tiny-positional-generic-lr1e-5/checkpoint-250`
+  `training/seq2seq-runs/phase4h-plus-guard-cleanup-lr1e-6/checkpoint-500`
 - Runtime version string in `llm-planner.js`:
-  `t5-efficient-tiny-positional-generic-lr1e-5-checkpoint-250-q8enc-q4dec-ort-beam-semantic-groups-generic-repair`
+  `t5-efficient-tiny-phase4h-plus-guard-checkpoint-500-q8enc-q4dec-ort-beam8`
 - Browser model directory: `models/timey-t5-efficient-tiny/`
 - Encoder: q8 ONNX
 - Decoder: opset21 q4 ONNX for supported MatMul/Gather weights
@@ -49,11 +49,18 @@ Current browser model:
   - `/decoder/shared/Gather`
   - `/lm_head/MatMul`
 - Current model cache key in `service-worker.js`:
-  `timey-model-t5-efficient-tiny-q8enc-q4dec-v1`
-- Current app cache key in `service-worker.js`: `timey-app-v45`
+  `timey-model-t5-efficient-tiny-q8enc-q4dec-v2`
+- Current app cache key in `service-worker.js`: `timey-app-v46`
+- Encoder content length:
+  `11,498,300` bytes
+- Encoder SHA-256:
+  `c086f2c818ca338f1e8365d5630a28468283fd774c08aa5b4b1d51e46f4fc540`
 - Decoder content length:
-  `35,305,100` bytes
-- Total model directory is roughly 47 MB.
+  `35,285,581` bytes
+- Decoder SHA-256:
+  `dd719902165b795aaaf215dcc8c4d34c8fe1c0b264f564d9d03dba0e83982f57`
+- ONNX assets total:
+  `46,783,881` bytes.
 
 Current runtime:
 
@@ -63,7 +70,7 @@ Current runtime:
 - Beam search rejects semantic dead-end grouped DSL branches, including the
   old `around` grouped syntax and `+` groups with `alt`, block separators, or
   non-`Timer` labels, before falling back to any otherwise invalid token.
-- `TINY_TIMER_NUM_BEAMS = 4`
+- `TINY_TIMER_NUM_BEAMS = 8`
 - `TINY_TIMER_TOPK_PER_BEAM = 8`
 - `TINY_TIMER_MAX_INPUT_TOKENS = 160`
 - `TINY_TIMER_MAX_NEW_TOKENS = 64`
@@ -109,6 +116,19 @@ Current opt-in expanded dataset:
   - `phase4h-plus-work-rest-guard`
   - `phase4h-label-copy`
 
+Current opt-in browser-residual dataset:
+
+- Dataset output directory:
+  `training/generated-dsl-compressed-end-phase4i-browser/`
+- Build flags:
+  `--phase4-hard-data --user-request-expansion --phase4h-residual-data --phase4i-browser-residual-data`
+- Train rows: 1543
+- Validation rows: 207
+- Hard validation rows: 62
+- New train-only Phase 4I category:
+  - `phase4i-browser-raw-residual`: 76 rows from 19 real raw browser misses
+    with four instruction variants each.
+
 Current validation categories:
 
 - `core-regression`
@@ -129,23 +149,34 @@ Current validation categories:
 - `user-generic-surface`
 - `user-label-surface`
 
-Current HF export candidate:
+Current HF/browser candidate status:
 
 - Checkpoint:
   `training/seq2seq-runs/phase4h-plus-guard-cleanup-lr1e-6/checkpoint-500`
 - Required decode for current best Python/HF result: beam 8
 - Python/HF expanded validation result with beam 8:
   185/207 strict, 207/207 parseable, 0/207 semantic-invalid
-- Status: not exported, not deployed. Needs ONNX export, q8/q4 quantization,
-  raw browser beam-8 gate, and latency measurement before promotion.
+- Export status: exported and promoted to local browser assets with q8 encoder
+  and q4 decoder.
+- Browser debug status: ORT Web loads both sessions; beam-8 generation works.
+- Production deploy status: not updated in this phase.
 
-Current real-browser acceptance categories:
+Current real-browser acceptance categories with Phase 4H local browser assets:
 
 ```text
 core-regression: 7/7
 explicit-label-copy: 4/4
-generic-count: 15/15
+generic-count: 18/18
 generic-position: 26/26
+```
+
+Current raw browser output gate with Phase 4H local browser assets:
+
+```text
+core-regression: 7/7
+explicit-label-copy: 4/4
+generic-count: 14/18
+generic-position: 11/26
 ```
 
 ## Source Of Truth Files
@@ -190,6 +221,10 @@ Training/eval:
 - `scripts/training/seq2seq-timer-benchmark.py`
   - Local seq2seq training and evaluation.
   - Now writes `categorySummary` per step in `summary.json`.
+- `scripts/training/quantize-onnx-matmul-nbits.py`
+  - Durable wrapper around ORT `MatMulNBitsQuantizer`.
+  - Installs the small local `onnx_ir` compatibility shim needed by the
+    project environment.
 - `scripts/training/eval-timer-model.mjs`
   - OpenAI-compatible endpoint evaluator.
   - Now prints per-category parse/strict/semantic rates and can write
@@ -1219,8 +1254,7 @@ Conclusion:
 
 ### Phase 4H: Residual Curriculum Training
 
-Status: completed local HF sweep 2026-05-18; new HF candidate selected, not
-exported or deployed yet.
+Status: completed and promoted to local browser assets 2026-05-18.
 
 Artifact:
 
@@ -1270,13 +1304,55 @@ Best HF checkpoint:
 training/seq2seq-runs/phase4h-plus-guard-cleanup-lr1e-6/checkpoint-500
 ```
 
-Best measured decode:
+Best measured Python/HF decode:
 
 ```text
 num_beams=8, early_stopping=true
 ```
 
 Beam 12 and beam 16 did not improve beyond the beam-8 score.
+
+Browser export and local promotion:
+
+- Exported `checkpoint-500` to ONNX opset21.
+- Quantized encoder q8 with ORT dynamic quantization.
+- Quantized decoder q4 with ORT MatMulNBits, excluding:
+  - `/decoder/shared/Gather`
+  - `/lm_head/MatMul`
+- Added durable wrapper:
+  `scripts/training/quantize-onnx-matmul-nbits.py`
+- Updated runtime:
+  - `TRAINED_TINY_MODEL_VERSION`:
+    `t5-efficient-tiny-phase4h-plus-guard-checkpoint-500-q8enc-q4dec-ort-beam8`
+  - `TINY_TIMER_NUM_BEAMS=8`
+  - model cache:
+    `timey-model-t5-efficient-tiny-q8enc-q4dec-v2`
+  - app cache: `timey-app-v46`
+
+Exported asset sizes:
+
+| Asset | Bytes | SHA-256 |
+| --- | ---: | --- |
+| encoder q8 | 11,498,300 | `c086f2c818ca338f1e8365d5630a28468283fd774c08aa5b4b1d51e46f4fc540` |
+| decoder q4 | 35,285,581 | `dd719902165b795aaaf215dcc8c4d34c8fe1c0b264f564d9d03dba0e83982f57` |
+
+Real-browser repaired output with local Phase 4H assets:
+
+| Category | Pass |
+| --- | ---: |
+| `core-regression` | 7/7 |
+| `explicit-label-copy` | 4/4 |
+| `generic-count` | 18/18 |
+| `generic-position` | 26/26 |
+
+Raw browser output with local Phase 4H assets:
+
+| Category | Pass |
+| --- | ---: |
+| `core-regression` | 7/7 |
+| `explicit-label-copy` | 4/4 |
+| `generic-count` | 14/18 |
+| `generic-position` | 11/26 |
 
 Conclusions:
 
@@ -1286,17 +1362,75 @@ Conclusions:
   reintroduced illegal grouped work/rest syntax.
 - Beam 8 matters for the new checkpoint: beam 4 leaves two semantic-invalid
   outputs, while beam 8 selects valid alternatives.
-- The model still does not pass every validation row. Remaining misses are
-  valid-but-wrong outputs concentrated in word durations, generic endpoint
-  copying, `around` work/rest details, and one label-copy row.
+- The model still does not pass every validation row. Remaining Python/HF
+  misses are valid-but-wrong outputs concentrated in word durations, generic
+  endpoint copying, `around` work/rest details, and one label-copy row.
+- Browser ONNX behavior is weaker than Python/HF on raw generic count and
+  generic-position prompts. Repaired production output passes, but raw output
+  remains below the model-first bar.
+- Phase 4H is the local browser model to keep unless a later checkpoint beats
+  it in raw browser categories.
 
-Next task:
+### Phase 4I: Browser Raw Residual Training
 
-- Export `phase4h-plus-guard-cleanup-lr1e-6/checkpoint-500` to ONNX.
-- Apply existing q8 encoder + q4 decoder quantization recipe.
-- Test raw browser ONNX with beam 8.
-- Measure beam-8 latency before changing production constants.
-- Promote only if browser output matches the Python/HF safety profile.
+Status: completed 2026-05-18; no checkpoint promoted.
+
+Artifact:
+
+- `training/eval-runs/phase4i-browser-raw-residual/README.md`
+
+Goal:
+
+Train directly on actual Phase 4H raw browser mismatches to improve first-pass
+model output for generic count/duration and generic-position prompts.
+
+Dataset changes:
+
+- Added opt-in `--phase4i-browser-residual-data`.
+- Generated:
+  `training/generated-dsl-compressed-end-phase4i-browser/`
+- Added train-only category:
+  - `phase4i-browser-raw-residual`: 76 rows
+- Dataset size:
+  - train: 1543
+  - validation: 207
+  - hard validation: 62
+- `validate-timer-sft.mjs` now permits duplicate user requests only when
+  `metadata.duplicateOk` is set, because the residual set intentionally wraps
+  the same prompt in several instruction templates.
+
+Runs:
+
+| Run | Best step | Strict | Parseable | Semantic-invalid | Result |
+| --- | ---: | ---: | ---: | ---: | --- |
+| `phase4i-browser-raw-residual-lr1e-6` | 50/100 | 187/207 | 207/207 | 0/207 | small HF gain, later regression |
+| `phase4i-browser-exact-lr2e-6` | 50 | 187/207 | 207/207 | 0/207 | selected for browser export check |
+
+Browser ONNX check:
+
+- Exported and quantized `phase4i-browser-exact-lr2e-6/checkpoint-50`.
+- Temporarily installed it under `models/timey-t5-efficient-tiny/`.
+- Repaired browser output still passed all categories.
+- Raw browser output tied Phase 4H:
+  - `core-regression`: 7/7
+  - `explicit-label-copy`: 4/4
+  - `generic-count`: 14/18
+  - `generic-position`: 11/26
+- Increasing `TINY_TIMER_TOPK_PER_BEAM` from 8 to 16 did not change the raw
+  failures.
+- Phase 4H assets were restored after the check.
+
+Conclusion:
+
+- Do not promote Phase 4I.
+- Exact residual rows improved Python/HF by one validation item but did not
+  transfer to better raw ONNX browser output.
+- The failure appears structural for this tiny model: it collapses
+  count/duration and endpoint/middle slots rather than simply lacking those
+  exact examples.
+- Next model-first work should change the training objective/curriculum,
+  architecture, or constrained decode surface rather than adding another small
+  exact-residual set.
 
 ### Phase 5: Quantization-Aware Continuation
 

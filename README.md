@@ -128,9 +128,9 @@ fallback parser without prompting.
 
 The tiny model path pins `@huggingface/transformers@4.2.0`,
 `onnxruntime-web@1.26.0-dev.20260416-b7804b056c`, and a mixed q8/q4 ONNX export
-of `t5-efficient-tiny-positional-generic-lr1e-5-checkpoint-250`. The encoder is
-q8, and the decoder uses opset21 weight-only q4 for supported MatMul/Gather
-weights while keeping sensitive shared embedding/lm-head paths uncompressed.
+of `t5-efficient-tiny-phase4h-plus-guard-checkpoint-500`. The encoder is q8,
+and the decoder uses opset21 weight-only q4 for supported MatMul/Gather weights
+while keeping sensitive shared embedding/lm-head paths uncompressed.
 The model emits compact Timey DSL, for example `4x 1m: Rest | 1m: Work`, and
 the shared parser expands that into timer objects.
 For simple generic timer lists, the planner can repair a model output when the
@@ -139,7 +139,7 @@ deterministic list parser proves the requested timers exactly.
 ## Update Caching
 
 The service worker owns `timey-app-*` caches for app files and a separate
-`timey-model-t5-efficient-tiny-q8enc-q4dec-v1` cache for same-origin `/models/` assets.
+`timey-model-t5-efficient-tiny-q8enc-q4dec-v2` cache for same-origin `/models/` assets.
 App files use network-first responses; model files use cache-first responses so
 ordinary UI deploys do not force a fresh model download.
 
