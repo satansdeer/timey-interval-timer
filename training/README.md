@@ -158,6 +158,11 @@ The first command must pass for production safety. The second command is the
 model-first gate for candidate checkpoints: it fails if raw tiny-model output
 does not match before deterministic repair.
 
+The first model-first generic sweep is recorded in
+`training/eval-runs/phase4e-model-first-training/`. It improved raw generic
+surface categories, but overgeneralized `around` into non-generic workouts, so
+no checkpoint was promoted.
+
 ## Results
 
 The production checkpoint is:

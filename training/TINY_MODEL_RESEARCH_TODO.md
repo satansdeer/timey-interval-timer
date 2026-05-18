@@ -952,6 +952,24 @@ Next model-first training task:
   - `user-around-contrast`
 - Promote only if raw category summaries improve without broad regressions.
 
+Initial model-first sweep:
+
+- Artifact:
+  `training/eval-runs/phase4e-model-first-training/README.md`
+- Run:
+  `training/seq2seq-runs/phase4e-model-first-generic-lr1e-5/`
+- Result:
+  - `user-generic-surface` improved from 0/8 to 4/8 by step 750.
+  - `generic-position` improved from 0/5 to 3/5 by step 500/750.
+  - `generic-position-hard` improved from 1/10 to 6/10 by step 750.
+  - But core/count/pair categories regressed badly.
+- Conclusion:
+  - Do not promote.
+  - The model has capacity, but naive weighting causes `around`
+    overgeneralization into warmup/cooldown and work/rest outputs.
+  - Next training should add semantic-invalid raw eval and anti-`around`
+    contrast rows before another sweep.
+
 ### Phase 5: Quantization-Aware Continuation
 
 Status: pending, only do this if Phase 2 int4/mixed quantization causes useful
