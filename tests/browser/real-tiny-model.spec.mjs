@@ -13,6 +13,7 @@ const profileDir =
   process.env.TIMEY_REAL_TINY_MODEL_PROFILE_DIR ||
   join(tmpdir(), `timey-real-tiny-model-profile-${browserChannel.replaceAll(/\W+/g, "-")}`);
 const timeoutMs = Number(process.env.TIMEY_REAL_TINY_MODEL_TIMEOUT_MS || 15 * 60_000);
+const shouldFailOnRawTinyModelMismatch = process.env.TIMEY_REAL_TINY_MODEL_RAW_STRICT === "1";
 
 const defaultTimers = [
   { label: "Warmup", seconds: 300, kind: "warmup" },
@@ -336,6 +337,7 @@ test("trained tiny timer model obeys interval setup prompts", async () => {
               name: scenario.name,
               model: planned.model,
               rawContent: planned.rawContent,
+              rawTimers: planned.rawTimers,
               timers: planned.timers,
             });
           }
@@ -361,28 +363,15 @@ test("trained tiny timer model obeys interval setup prompts", async () => {
     expect(result.ok, formatFailure(result)).toBe(true);
     expect(result.selectedModel).toBe(TRAINED_TINY_MODEL_ID);
 
-    const mismatches = [];
-    for (const scenario of problemScenarios) {
-      const output = result.outputs.find((entry) => entry.name === scenario.name);
-      const actual = simplifyTimers(output?.timers);
-      const expected = simplifyTimers(scenario.expectedTimers);
-
-      if (output?.model !== TRAINED_TINY_MODEL_ID || JSON.stringify(actual) !== JSON.stringify(expected)) {
-        mismatches.push({
-          name: scenario.name,
-          category: scenario.category,
-          prompt: scenario.text,
-          model: output?.model,
-          expected,
-          actual,
-          rawContent: output?.rawContent,
-          rawTimers: output?.timers,
-        });
-      }
-    }
-    console.log(formatCategorySummary(problemScenarios, result.outputs));
+    const mismatches = collectScenarioMismatches(problemScenarios, result.outputs, "timers");
+    const rawMismatches = collectScenarioMismatches(problemScenarios, result.outputs, "rawTimers");
+    console.log(formatCategorySummary(problemScenarios, result.outputs, "timers", "Real tiny model by category:"));
+    console.log(formatCategorySummary(problemScenarios, result.outputs, "rawTimers", "Raw tiny model by category:"));
 
     expect(mismatches, formatScenarioFailures(result, mismatches)).toEqual([]);
+    if (shouldFailOnRawTinyModelMismatch) {
+      expect(rawMismatches, formatScenarioFailures(result, rawMismatches, "Raw tiny model output")).toEqual([]);
+    }
   } finally {
     await context.close();
     await server.close();
@@ -455,12 +444,36 @@ function simplifyTimers(timers = []) {
   return timers.map(({ seconds, kind }) => ({ seconds, kind }));
 }
 
-function formatCategorySummary(scenarios, outputs) {
+function collectScenarioMismatches(scenarios, outputs, timerKey) {
+  const mismatches = [];
+  for (const scenario of scenarios) {
+    const output = outputs.find((entry) => entry.name === scenario.name);
+    const actual = simplifyTimers(output?.[timerKey]);
+    const expected = simplifyTimers(scenario.expectedTimers);
+
+    if (output?.model !== TRAINED_TINY_MODEL_ID || JSON.stringify(actual) !== JSON.stringify(expected)) {
+      mismatches.push({
+        name: scenario.name,
+        category: scenario.category,
+        prompt: scenario.text,
+        model: output?.model,
+        expected,
+        actual,
+        rawContent: output?.rawContent,
+        rawTimers: output?.rawTimers,
+        timers: output?.timers,
+      });
+    }
+  }
+  return mismatches;
+}
+
+function formatCategorySummary(scenarios, outputs, timerKey, title) {
   const buckets = new Map();
   for (const scenario of scenarios) {
     const category = scenario.category || "uncategorized";
     const output = outputs.find((entry) => entry.name === scenario.name);
-    const actual = simplifyTimers(output?.timers);
+    const actual = simplifyTimers(output?.[timerKey]);
     const expected = simplifyTimers(scenario.expectedTimers);
     const passed = output?.model === TRAINED_TINY_MODEL_ID && JSON.stringify(actual) === JSON.stringify(expected);
     const bucket = buckets.get(category) ?? { count: 0, passed: 0 };
@@ -470,7 +483,7 @@ function formatCategorySummary(scenarios, outputs) {
   }
 
   return [
-    "Real tiny model by category:",
+    title,
     ...[...buckets.entries()]
       .sort(([left], [right]) => left.localeCompare(right))
       .map(([category, bucket]) => {
@@ -491,9 +504,9 @@ function formatFailure(result) {
     .join("\n");
 }
 
-function formatScenarioFailures(result, mismatches) {
+function formatScenarioFailures(result, mismatches, title = "Real tiny model output") {
   return [
-    `Real tiny model output did not match expected timers for ${mismatches.length} scenario(s).`,
+    `${title} did not match expected timers for ${mismatches.length} scenario(s).`,
     `model: ${result.selectedModel}`,
     `mismatches: ${JSON.stringify(mismatches, null, 2)}`,
     result.statuses?.length ? `recent status: ${JSON.stringify(result.statuses, null, 2)}` : null,

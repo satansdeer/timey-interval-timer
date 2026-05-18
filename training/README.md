@@ -147,6 +147,17 @@ npm run training:eval -- \
 It reports parseable, strict exact, and semantic exact rates overall and by
 dataset category.
 
+For browser candidates, distinguish model intelligence from production repair:
+
+```sh
+npm run test:llm:real
+TIMEY_REAL_TINY_MODEL_RAW_STRICT=1 npm run test:llm:real
+```
+
+The first command must pass for production safety. The second command is the
+model-first gate for candidate checkpoints: it fails if raw tiny-model output
+does not match before deterministic repair.
+
 ## Results
 
 The production checkpoint is:

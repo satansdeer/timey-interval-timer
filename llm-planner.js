@@ -63,6 +63,7 @@ export async function planWithTinyLlm({ text, onStatus }) {
       timers: directDsl.timers,
       model: selectedModelId || TRAINED_TINY_MODEL_ID,
       rawContent: directDsl.rawContent,
+      rawTimers: directDsl.timers,
       source: "tiny-llm",
     };
   }
@@ -83,11 +84,13 @@ export async function planWithTinyLlm({ text, onStatus }) {
   if (!content) throw new Error("Tiny timer model returned an empty response");
 
   const parsed = parseTimerDsl(content, "tiny timer model output");
-  const timers = repairGenericTimerList(text, parsed.timers);
+  const rawTimers = validateLlmTimers(parsed.timers);
+  const timers = repairGenericTimerList(text, rawTimers);
   return {
     timers: validateLlmTimers(timers),
     model: selectedModelId,
     rawContent: content,
+    rawTimers,
     source: "tiny-llm",
   };
 }

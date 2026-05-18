@@ -50,7 +50,7 @@ Current browser model:
   - `/lm_head/MatMul`
 - Current model cache key in `service-worker.js`:
   `timey-model-t5-efficient-tiny-q8enc-q4dec-v1`
-- Current app cache key in `service-worker.js`: `timey-app-v44`
+- Current app cache key in `service-worker.js`: `timey-app-v45`
 - Decoder content length:
   `35,305,100` bytes
 - Total model directory is roughly 47 MB.
@@ -893,9 +893,64 @@ Validation:
 
 Conclusion:
 
-- This category is now owned by deterministic repair, not model training.
-- Future training can still include `user-generic-surface` as replay data, but
-  promotion should not depend on the tiny model learning this composition unaided.
+- This category has deterministic repair coverage as a production safety net.
+- This is not the desired end state. Future model promotion should be judged on
+  raw tiny-model outputs first, then repaired production outputs second.
+- Future training should include `user-generic-surface` as a first-class model
+  behavior target, not just as replay data hidden behind repair.
+
+### Phase 4E: Raw Model Gate And Model-First Training
+
+Status: in progress 2026-05-18.
+
+Principle:
+
+Repairs are guardrails, not the main solution. The model should learn to emit
+the correct Timey DSL whenever the request is within the trained task surface.
+
+Implemented checks:
+
+- `planWithTinyLlm` now returns `rawTimers` in addition to repaired `timers`.
+- `tests/browser/real-tiny-model.spec.mjs` prints two category summaries:
+  - repaired production output;
+  - raw tiny-model output before repair.
+- `TIMEY_REAL_TINY_MODEL_RAW_STRICT=1 npm run test:llm:real` is the opt-in
+  raw-output gate for candidate checkpoints.
+
+Current raw browser baseline after adding the gate:
+
+| Category | Repaired production output | Raw tiny-model output |
+| --- | ---: | ---: |
+| `core-regression` | 7/7 | 7/7 |
+| `explicit-label-copy` | 4/4 | 4/4 |
+| `generic-count` | 18/18 | 9/18 |
+| `generic-position` | 26/26 | 1/26 |
+
+Current policy:
+
+- Production acceptance can keep repair enabled.
+- Candidate model promotion should require raw category improvement and should
+  not count repaired outputs as model intelligence.
+- Any future training run should report:
+  - raw Python/HF validation by category;
+  - raw real-browser ONNX validation by category;
+  - repaired production validation as a separate safety metric.
+
+Next model-first training task:
+
+- Continue from the deployed checkpoint using the expanded user-request dataset.
+- Weight weak raw categories without hiding them behind repair:
+  - `user-generic-surface`
+  - `generic-position`
+  - `generic-position-hard`
+  - `user-duration-surface`
+- Preserve strong categories with replay:
+  - `count-middle`
+  - `count-pairs`
+  - `pairs`
+  - `explicit-label-copy`
+  - `user-around-contrast`
+- Promote only if raw category summaries improve without broad regressions.
 
 ### Phase 5: Quantization-Aware Continuation
 
