@@ -85,10 +85,53 @@ assert.deepEqual(
   [480, 60, 60, 60, 60, 480],
 );
 
+assert.deepEqual(
+  repairGenericTimerList("plain timers only: 5 minutes, then five timers of 1 minute, then 5 minutes", [
+    { label: "Timer 1", seconds: 300, kind: "other" },
+    { label: "Timer 2", seconds: 60, kind: "other" },
+  ]).map((timer) => timer.seconds),
+  [300, 60, 60, 60, 60, 60, 300],
+);
+
+assert.deepEqual(
+  repairGenericTimerList("timer sequence for practice: one 3 minutes, 5 short 15 seconds timers, one 4 minutes", [
+    { label: "Timer 1", seconds: 180, kind: "other" },
+    { label: "Timer 2", seconds: 15, kind: "other" },
+  ]).map((timer) => timer.seconds),
+  [180, 15, 15, 15, 15, 15, 240],
+);
+
+assert.deepEqual(
+  repairGenericTimerList("1 min 15 sec once, 15 seconds six times, 75 seconds once, all plain timers", [
+    { label: "Timer 1", seconds: 75, kind: "other" },
+  ]).map((timer) => timer.seconds),
+  [75, 15, 15, 15, 15, 15, 15, 75],
+);
+
 const warmupLikeModelTimers = [
   { label: "Warmup", seconds: 300, kind: "warmup" },
   { label: "Timer", seconds: 60, kind: "other" },
 ];
-assert.equal(repairGenericTimerList("5 one minute timers", warmupLikeModelTimers), warmupLikeModelTimers);
+assert.deepEqual(
+  repairGenericTimerList("5 one minute timers", warmupLikeModelTimers).map((timer) => [timer.seconds, timer.kind]),
+  [
+    [60, "other"],
+    [60, "other"],
+    [60, "other"],
+    [60, "other"],
+    [60, "other"],
+  ],
+);
+
+assert.deepEqual(
+  repairGenericTimerList("one 5 minute timer and one 1 minute timer", warmupLikeModelTimers).map((timer) => [
+    timer.seconds,
+    timer.kind,
+  ]),
+  [
+    [300, "other"],
+    [60, "other"],
+  ],
+);
 
 console.log("llm planner tests passed");

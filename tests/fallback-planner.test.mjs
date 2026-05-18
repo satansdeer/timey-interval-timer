@@ -121,6 +121,35 @@ assert.deepEqual(
   [480, 60, 60, 60, 60, 480],
 );
 
+for (const [prompt, expectedSeconds] of [
+  ["plain timers only: 5 minutes, then five timers of 1 minute, then 5 minutes", [300, 60, 60, 60, 60, 60, 300]],
+  [
+    "make the outside generic timers 8 minutes and 8 minutes; put 4 1 minute timers inside",
+    [480, 60, 60, 60, 60, 480],
+  ],
+  [
+    "timer sequence for practice: one 4 minutes, 5 short 30 seconds timers, one 4 minutes",
+    [240, 30, 30, 30, 30, 30, 240],
+  ],
+  [
+    "no labels, no warmup: start with 20 seconds, do 7 5 seconds timers, finish with 20 seconds",
+    [20, 5, 5, 5, 5, 5, 5, 5, 20],
+  ],
+  [
+    "1 min 15 sec once, 15 seconds six times, 75 seconds once, all plain timers",
+    [75, 15, 15, 15, 15, 15, 15, 75],
+  ],
+  [
+    "plain timers only: two and a half minutes, then 3 timers of 20 seconds, then 210 seconds",
+    [150, 20, 20, 20, 210],
+  ],
+]) {
+  assert.deepEqual(
+    planWithFallback(prompt, []).timers.map((timer) => timer.seconds),
+    expectedSeconds,
+  );
+}
+
 const explicitSequence = planWithFallback("8m:Warmup 1m:work 1m30s:rest 8m:Cooldown", []);
 assert.deepEqual(summarize(explicitSequence), {
   count: 4,

@@ -182,7 +182,8 @@ the tiny model own generic bookend semantics by itself.
 Next useful work:
 
 1. Keep deterministic generic-position repair in the browser path.
-2. Treat `user-generic-surface` as a repair-or-distillation target, not as a
-   solved training-only category.
+2. Treat broad `user-generic-surface` composition as deterministic repair first,
+   then replay/distillation data second. Completed in the follow-up deterministic
+   repair pass on 2026-05-18.
 3. If training again, use stronger teacher-generated paraphrases and more
    explicit old-category replay rather than only increasing synthetic weights.

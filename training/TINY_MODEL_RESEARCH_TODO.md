@@ -41,7 +41,7 @@ Current browser model:
 - Source checkpoint:
   `training/seq2seq-runs/t5-efficient-tiny-positional-generic-lr1e-5/checkpoint-250`
 - Runtime version string in `llm-planner.js`:
-  `t5-efficient-tiny-positional-generic-lr1e-5-checkpoint-250-q8enc-q4dec-ort-beam-semantic-groups`
+  `t5-efficient-tiny-positional-generic-lr1e-5-checkpoint-250-q8enc-q4dec-ort-beam-semantic-groups-generic-repair`
 - Browser model directory: `models/timey-t5-efficient-tiny/`
 - Encoder: q8 ONNX
 - Decoder: opset21 q4 ONNX for supported MatMul/Gather weights
@@ -50,7 +50,7 @@ Current browser model:
   - `/lm_head/MatMul`
 - Current model cache key in `service-worker.js`:
   `timey-model-t5-efficient-tiny-q8enc-q4dec-v1`
-- Current app cache key in `service-worker.js`: `timey-app-v43`
+- Current app cache key in `service-worker.js`: `timey-app-v44`
 - Decoder content length:
   `35,305,100` bytes
 - Total model directory is roughly 47 MB.
@@ -848,6 +848,55 @@ Conclusion:
 - Keep deterministic generic-position repair in the browser path.
 - Treat `user-generic-surface` as the next repair/distillation target.
 
+### Phase 4D: Deterministic User Generic Surface Repair
+
+Status: completed 2026-05-18.
+
+Hypothesis:
+
+The `user-generic-surface` failures are provable plain-timer requests, so they
+should be handled by deterministic extraction before spending more training
+budget. The model can still try first, but browser repair should replace a
+collapsed all-generic model output when the request itself clearly specifies the
+full generic sequence.
+
+Implemented:
+
+- Extended `fallback-planner.js` shared generic extraction, which is used by:
+  - fallback planning;
+  - `llm-planner.js` `repairGenericTimerList` after tiny-model output.
+- Tightened `repairGenericTimerList` so a deterministic generic parse also
+  repairs hallucinated non-generic kinds such as `Warmup` on a prompt that says
+  `no warmup`.
+- Added structured generic sequence parsing for forms such as:
+  - `plain timers only: 5 minutes, then five timers of 1 minute, then 5 minutes`
+  - `no labels, no warmup: start with 20 seconds, do 7 5 seconds timers, finish with 20 seconds`
+  - `make the outside generic timers 8 minutes and 8 minutes; put 4 1 minute timers inside`
+  - `1 min 15 sec once, 15 seconds six times, 75 seconds once, all plain timers`
+  - `timer sequence for practice: one 3 minutes, 5 short 15 seconds timers, one 4 minutes`
+- Added duration span support for:
+  - `0:45`
+  - `half a minute`
+  - `one and a half minutes`
+  - multi-part durations such as `1 min 15 sec`
+  - common word-number durations such as `forty five seconds` and
+    `seventy five seconds`
+- Bumped app cache to `timey-app-v44`; model cache unchanged.
+
+Validation:
+
+- All 50 `user-generic-surface` rows in the expanded train+validation dataset
+  are now exactly covered by `extractExplicitGenericTimers`.
+- Added unit tests for fallback and tiny-model repair.
+- Added real-browser acceptance scenarios for representative user-generic
+  phrasing.
+
+Conclusion:
+
+- This category is now owned by deterministic repair, not model training.
+- Future training can still include `user-generic-surface` as replay data, but
+  promotion should not depend on the tiny model learning this composition unaided.
+
 ### Phase 5: Quantization-Aware Continuation
 
 Status: pending, only do this if Phase 2 int4/mixed quantization causes useful
@@ -920,6 +969,11 @@ Already fixed/covered:
 - Separated endpoint wording:
   - Example: `first is 1 minute, then five 20 second timers, last is 1 minute`
   - Owner: `fallback-planner.js` positional extractor.
+- Broad plain generic surface wording:
+  - Example:
+    `plain timers only: 5 minutes, then five timers of 1 minute, then 5 minutes`
+  - Owner: `fallback-planner.js` structured generic sequence extractor plus
+    `llm-planner.js` generic repair.
 
 Boundary:
 

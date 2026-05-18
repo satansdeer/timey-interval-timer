@@ -9,7 +9,7 @@ import {
 
 export const TRANSFORMERS_PACKAGE_VERSION = "4.2.0";
 export const TRAINED_TINY_MODEL_ID = "timey-t5-efficient-tiny";
-export const TRAINED_TINY_MODEL_VERSION = "t5-efficient-tiny-positional-generic-lr1e-5-checkpoint-250-q8enc-q4dec-ort-beam-semantic-groups";
+export const TRAINED_TINY_MODEL_VERSION = "t5-efficient-tiny-positional-generic-lr1e-5-checkpoint-250-q8enc-q4dec-ort-beam-semantic-groups-generic-repair";
 export const TRAINED_TINY_MODEL_DTYPE = "q8-encoder-q4-decoder-opset21";
 export const TRAINED_TINY_MODEL_DEVICE = "wasm";
 export const TRANSFORMERS_CDN_URL = `https://cdn.jsdelivr.net/npm/@huggingface/transformers@${TRANSFORMERS_PACKAGE_VERSION}`;
@@ -108,14 +108,14 @@ export function parseDirectTimerDslInput(text) {
 export function repairGenericTimerList(text, modelTimers) {
   const genericTimers = extractExplicitGenericTimers(normalizePrompt(text));
   if (!genericTimers.length) return modelTimers;
-  if (modelTimers.some((timer) => timer.kind !== "other")) return modelTimers;
 
   const modelDurations = modelTimers.map((timer) => Number(timer.durationSeconds ?? timer.seconds));
   const genericDurations = genericTimers.map((timer) => Number(timer.durationSeconds ?? timer.seconds));
-  const sameDurations =
+  const sameGenericTimers =
     modelDurations.length === genericDurations.length &&
-    modelDurations.every((seconds, index) => seconds === genericDurations[index]);
-  return sameDurations ? modelTimers : genericTimers;
+    modelDurations.every((seconds, index) => seconds === genericDurations[index]) &&
+    modelTimers.every((timer) => timer.kind === "other");
+  return sameGenericTimers ? modelTimers : genericTimers;
 }
 
 export function buildTinyLlmInput(text) {

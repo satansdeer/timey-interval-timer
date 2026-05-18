@@ -99,6 +99,33 @@ const problemScenarios = [
     [4, 60],
     [1, 480],
   ]),
+  genericScenario(
+    "user generic plain timers only",
+    "plain timers only: 5 minutes, then five timers of 1 minute, then 5 minutes",
+    [
+      [1, 300],
+      [5, 60],
+      [1, 300],
+    ],
+  ),
+  genericScenario(
+    "user generic no labels no warmup",
+    "no labels, no warmup: start with 20 seconds, do 7 5 seconds timers, finish with 20 seconds",
+    [
+      [1, 20],
+      [7, 5],
+      [1, 20],
+    ],
+  ),
+  genericScenario(
+    "user generic asymmetric practice sequence",
+    "timer sequence for practice: one 3 minutes, 5 short 15 seconds timers, one 4 minutes",
+    [
+      [1, 180],
+      [5, 15],
+      [1, 240],
+    ],
+  ),
   genericScenario("positional compact minute spelling", "first and last timer 5minute, 5 one minute timers in between", [
     [1, 300],
     [5, 60],

@@ -180,7 +180,9 @@ duplication errors during the next focused continuation run.
 The user-request expansion was measured in
 `training/eval-runs/phase6-user-request-expansion/`. It improved the new
 `user-around-contrast` category, but did not fix `user-generic-surface` or
-`generic-position`, so no checkpoint from that phase was promoted.
+`generic-position`, so no checkpoint from that phase was promoted. The broad
+plain-timer `user-generic-surface` cases are now covered by deterministic
+generic-sequence repair in the browser path.
 
 ## Browser Export
 

@@ -28,11 +28,20 @@ const NUMBER_WORDS = new Map([
   ["eight", 8],
   ["nine", 9],
   ["ten", 10],
+  ["eleven", 11],
+  ["twelve", 12],
+  ["thirteen", 13],
+  ["fourteen", 14],
   ["fifteen", 15],
+  ["sixteen", 16],
+  ["seventeen", 17],
+  ["eighteen", 18],
+  ["nineteen", 19],
   ["twenty", 20],
   ["thirty", 30],
   ["forty", 40],
   ["forty five", 45],
+  ["seventy five", 75],
   ["ninety", 90],
 ]);
 
@@ -295,7 +304,19 @@ function replaceNumberWords(text) {
     ten: 10,
     eleven: 11,
     twelve: 12,
+    thirteen: 13,
+    fourteen: 14,
+    fifteen: 15,
     sixteen: 16,
+    seventeen: 17,
+    eighteen: 18,
+    nineteen: 19,
+    twenty: 20,
+    thirty: 30,
+    forty: 40,
+    "forty five": 45,
+    "seventy five": 75,
+    ninety: 90,
     first: 1,
     second: 2,
     third: 3,
@@ -307,8 +328,15 @@ function replaceNumberWords(text) {
     ninth: 9,
     tenth: 10,
   };
+  const pattern = new RegExp(
+    `\\b(${Object.keys(numberWords)
+      .sort((left, right) => right.length - left.length)
+      .map(escapeRegExp)
+      .join("|")})\\b`,
+    "gi",
+  );
   return String(text).replace(
-    /\b(one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|sixteen|first|second|third|fourth|fifth|sixth|seventh|eighth|ninth|tenth)\b/gi,
+    pattern,
     (match, _word, offset, fullText) => {
       if (match.toLowerCase() === "second" && hasDurationAmountBefore(fullText, offset)) {
         return match;
@@ -438,10 +466,143 @@ export function extractExplicitGenericTimers(text) {
     return [];
   }
 
+  const structuredTimers = extractStructuredGenericSequenceTimers(text);
+  if (structuredTimers.length) return structuredTimers;
+
   const positionalTimers = extractPositionalGenericTimers(text);
   if (positionalTimers.length) return positionalTimers;
 
   return extractSequentialGenericTimers(text);
+}
+
+function extractStructuredGenericSequenceTimers(text) {
+  const countedGroups = findCountedGenericDurationGroups(text);
+  if (!countedGroups.length) return [];
+
+  const durationSpans = extractDurationSpans(text);
+  for (const group of countedGroups) {
+    const before = durationSpans.filter((span) => span.end <= group.start);
+    const after = durationSpans.filter((span) => span.start >= group.end);
+    const endpoints = findStructuredGenericEndpoints(text, before, after);
+    if (!endpoints) continue;
+
+    return expandGenericTimerGroups([
+      [1, endpoints.leftSeconds],
+      [group.count, group.seconds],
+      [1, endpoints.rightSeconds],
+    ]);
+  }
+
+  return [];
+}
+
+function findStructuredGenericEndpoints(text, before, after) {
+  if (before.length && after.length) {
+    return {
+      leftSeconds: before[before.length - 1].seconds,
+      rightSeconds: after[0].seconds,
+    };
+  }
+
+  if (
+    before.length >= 2 &&
+    /\b(?:outside|outer)\s+generic\s+timers?\b|\b(?:outside|outer)\s+timers?\b/.test(text)
+  ) {
+    return {
+      leftSeconds: before[0].seconds,
+      rightSeconds: before[1].seconds,
+    };
+  }
+
+  return null;
+}
+
+function findCountedGenericDurationGroups(text) {
+  const groups = [];
+  const durationSpans = extractDurationSpans(text);
+
+  for (const duration of durationSpans) {
+    const before = text.slice(Math.max(0, duration.start - 56), duration.start);
+    const after = text.slice(duration.end, Math.min(text.length, duration.end + 56));
+    const beforeCount = parseTrailingCount(before);
+    const timersOfCount = parseTimersOfCount(before);
+    const afterTimesCount = parseLeadingTimesCount(after);
+
+    if (timersOfCount) {
+      groups.push({
+        start: duration.start - before.length + timersOfCount.start,
+        end: duration.end,
+        count: timersOfCount.count,
+        seconds: duration.seconds,
+      });
+      continue;
+    }
+
+    if (beforeCount && /^\s*(?:timers?|intervals?)\b/.test(after)) {
+      groups.push({
+        start: duration.start - beforeCount.width,
+        end: duration.end + after.match(/^\s*(?:timers?|intervals?)/)[0].length,
+        count: beforeCount.count,
+        seconds: duration.seconds,
+      });
+      continue;
+    }
+
+    if (afterTimesCount) {
+      groups.push({
+        start: duration.start,
+        end: duration.end + afterTimesCount.width,
+        count: afterTimesCount.count,
+        seconds: duration.seconds,
+      });
+    }
+  }
+
+  return dedupeCountedGroups(groups)
+    .filter((group) => group.count > 1)
+    .sort((left, right) => left.start - right.start);
+}
+
+function parseTrailingCount(text) {
+  const match = new RegExp(`(?:^|\\s)(${numberTokenPattern()})\\s+(?:short\\s+)?$`).exec(text);
+  if (!match) return null;
+  const count = parseNumberToken(match[1]);
+  return count ? { count: clampInteger(count, 1, MAX_INTERVALS), width: match[0].trimStart().length } : null;
+}
+
+function parseTimersOfCount(text) {
+  const match = new RegExp(`(?:^|\\s)(${numberTokenPattern()})\\s+(?:plain\\s+|short\\s+)?(?:timers?|intervals?)\\s+(?:of|for)\\s+$`).exec(
+    text,
+  );
+  if (!match) return null;
+  const count = parseNumberToken(match[1]);
+  if (!count) return null;
+  return {
+    count: clampInteger(count, 1, MAX_INTERVALS),
+    start: match.index + match[0].indexOf(match[1]),
+  };
+}
+
+function parseLeadingTimesCount(text) {
+  const match = new RegExp(`^\\s*(${numberTokenPattern()})\\s+times\\b`).exec(text);
+  if (!match) return null;
+  const count = parseNumberToken(match[1]);
+  return count ? { count: clampInteger(count, 1, MAX_INTERVALS), width: match[0].length } : null;
+}
+
+function dedupeCountedGroups(groups) {
+  const result = [];
+  for (const group of groups) {
+    const duplicate = result.some(
+      (existing) =>
+        existing.start === group.start &&
+        existing.end === group.end &&
+        existing.count === group.count &&
+        existing.seconds === group.seconds,
+    );
+    if (!duplicate) result.push(group);
+  }
+  return result;
 }
 
 function extractPositionalGenericTimers(text) {
@@ -506,7 +667,7 @@ function extractSeparatedEndpointGenericTimers(text) {
 
 function extractAroundGenericTimers(text) {
   const match = new RegExp(
-    `\\b2\\s+${durationPattern()}\\s+timers?\\s+(?:around|with)\\s+(${numberTokenPattern()})\\s+(${numberTokenPattern()})\\s*(${DURATION_UNITS})\\s*(?:timers?|intervals?)?`,
+    `\\b2\\s+${durationPattern()}\\s+timers?\\s+(?:around|with)\\s+(${numberTokenPattern()})\\s+(${numberTokenPattern()})\\s*(${strictDurationUnitPattern()})\\s*(?:timers?|intervals?)?`,
   ).exec(text);
   if (!match) return [];
 
@@ -524,7 +685,7 @@ function extractAroundGenericTimers(text) {
 
 function extractBetweenTwoOuterGenericTimers(text) {
   const match = new RegExp(
-    `\\b(${numberTokenPattern()})\\s+(${numberTokenPattern()})\\s*(${DURATION_UNITS})\\s*(?:timers?|intervals?)?\\s+between\\s+2\\s+${durationPattern()}\\s+timers?`,
+    `\\b(${numberTokenPattern()})\\s+(${numberTokenPattern()})\\s*(${strictDurationUnitPattern()})\\s*(?:timers?|intervals?)?\\s+between\\s+2\\s+${durationPattern()}\\s+timers?`,
   ).exec(text);
   if (!match) return [];
 
@@ -544,8 +705,8 @@ function extractSequentialGenericTimers(text) {
   const groups = [];
   const genericGroupPattern = new RegExp(
     [
-      `\\b(?:(?<count>${numberTokenPattern()})\\s+(?<durationValue>${numberTokenPattern()})\\s*(?<durationUnit>${DURATION_UNITS})\\s*(?:timers?|intervals?)?`,
-      `|(?<singleValue>${numberTokenPattern()})\\s*(?<singleUnit>${DURATION_UNITS})\\s*(?:timers?|intervals?))\\b`,
+      `\\b(?:(?<count>${numberTokenPattern()})\\s+(?:short\\s+)?(?<durationValue>${numberTokenPattern()})\\s*(?<durationUnit>${strictDurationUnitPattern()})\\s*(?:timers?|intervals?)?`,
+      `|(?<singleValue>${numberTokenPattern()})\\s*(?<singleUnit>${strictDurationUnitPattern()})\\s*(?:timers?|intervals?))\\b`,
     ].join(""),
     "g",
   );
@@ -814,7 +975,11 @@ function isDurationBridge(bridge, maxDistance, allowEndpointBridge = false) {
 }
 
 function hasEndpointLabel(text) {
-  return /\b(warmup|warm up|cooldown|cool down|warmdown|warm down)\b/.test(text);
+  const withoutNegatedEndpointLabels = String(text || "").replace(
+    /\bno\s+(?:warmup|warm up|cooldown|cool down|warmdown|warm down)\b/g,
+    "",
+  );
+  return /\b(warmup|warm up|cooldown|cool down|warmdown|warm down)\b/.test(withoutNegatedEndpointLabels);
 }
 
 function firstUsefulDuration(text) {
@@ -825,8 +990,86 @@ function firstUsefulDuration(text) {
   return null;
 }
 
+function extractDurationSpans(text) {
+  return dedupeDurationSpans([
+    ...extractClockDurationSpans(text),
+    ...extractHalfMinuteDurationSpans(text),
+    ...extractAndHalfDurationSpans(text),
+    ...extractUnitDurationSpans(text),
+  ]).sort((left, right) => left.start - right.start || right.end - left.end);
+}
+
+function extractClockDurationSpans(text) {
+  const spans = [];
+  for (const match of text.matchAll(/\b(\d{1,2}):(\d{2})\b/g)) {
+    const minutes = Number(match[1]);
+    const seconds = Number(match[2]);
+    if (!Number.isFinite(minutes) || !Number.isFinite(seconds) || seconds >= 60) continue;
+    spans.push({
+      start: match.index,
+      end: match.index + match[0].length,
+      seconds: minutes * 60 + seconds,
+    });
+  }
+  return spans.filter((span) => span.seconds > 0);
+}
+
+function extractHalfMinuteDurationSpans(text) {
+  const spans = [];
+  for (const match of text.matchAll(/\b(?:a\s+)?half\s+(?:a\s+)?minutes?\b/g)) {
+    spans.push({ start: match.index, end: match.index + match[0].length, seconds: 30 });
+  }
+  return spans;
+}
+
+function extractAndHalfDurationSpans(text) {
+  const spans = [];
+  const pattern = new RegExp(`\\b(${numberTokenPattern()})\\s+and\\s+a\\s+half\\s+(${strictDurationUnitPattern()})`, "g");
+  for (const match of text.matchAll(pattern)) {
+    const value = parseNumberToken(match[1]);
+    if (!value) continue;
+    const seconds = durationFromParts(value + 0.5, match[2]);
+    if (seconds) spans.push({ start: match.index, end: match.index + match[0].length, seconds });
+  }
+  return spans;
+}
+
+function extractUnitDurationSpans(text) {
+  const spans = [];
+  const pattern = new RegExp(`\\b(?:(?:${numberTokenPattern()})\\s*(?:${strictDurationUnitPattern()})\\s*)+`, "g");
+  for (const match of text.matchAll(pattern)) {
+    let seconds = 0;
+    for (const part of match[0].matchAll(new RegExp(`(${numberTokenPattern()})\\s*(${strictDurationUnitPattern()})`, "g"))) {
+      const value = parseNumberToken(part[1]);
+      const partSeconds = durationFromParts(value, part[2]);
+      if (partSeconds) seconds += partSeconds;
+    }
+    if (seconds > 0) {
+      spans.push({ start: match.index, end: match.index + match[0].length, seconds });
+    }
+  }
+  return spans;
+}
+
+function dedupeDurationSpans(spans) {
+  const sorted = [...spans].sort((left, right) => {
+    if (left.start !== right.start) return left.start - right.start;
+    return right.end - left.end;
+  });
+  const result = [];
+  for (const span of sorted) {
+    const contained = result.some((existing) => span.start >= existing.start && span.end <= existing.end);
+    if (!contained) result.push(span);
+  }
+  return result;
+}
+
 function durationPattern() {
-  return `(\\d+(?:\\.\\d+)?)\\s*(${DURATION_UNITS})`;
+  return `(\\d+(?:\\.\\d+)?)\\s*(${strictDurationUnitPattern()})`;
+}
+
+function strictDurationUnitPattern() {
+  return `(?:${DURATION_UNITS})(?![a-z])`;
 }
 
 function numberTokenPattern() {
