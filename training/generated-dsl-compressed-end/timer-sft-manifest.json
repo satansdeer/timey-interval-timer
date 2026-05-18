@@ -4,6 +4,7 @@
   "userFormat": "natural",
   "dslEndToken": true,
   "phase4HardData": false,
+  "userRequestExpansion": false,
   "qwen3NoThink": false,
   "validationRatio": 0.18,
   "files": {

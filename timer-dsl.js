@@ -18,10 +18,6 @@ const TIMER_DSL_PREFIX_COMPLETIONS = [
   "D",
   "ND",
   "d 1s: Timer",
-  "und 1s: Timer",
-  "ound 1s: Timer",
-  "round 1s: Timer",
-  " around 1s: Timer",
   " + 1s: Timer",
   "imer",
   "mer",
@@ -379,6 +375,9 @@ function parseGenericGroupCommand(command, context) {
 
   const expression = match[1].trim();
   if (!/[+]/.test(expression) && !/\baround\b/i.test(expression)) return null;
+  if (/\baround\b/i.test(expression)) {
+    throw new Error(`${context}: grouped generic syntax uses +, not around`);
+  }
 
   const label = normalizeTimerLabel(match[2]);
   if (label.toLowerCase() !== "timer") {
@@ -386,18 +385,6 @@ function parseGenericGroupCommand(command, context) {
   }
   const kind = "other";
   const canonicalLabel = "Timer";
-
-  if (/\baround\b/i.test(expression)) {
-    const aroundMatch = expression.match(/^([\s\S]+?)\s+around\s+([\s\S]+)$/i);
-    if (!aroundMatch) throw new Error(`${context}: expected duration around duration expression`);
-
-    const bookendGroups = parseGenericGroupTerms(aroundMatch[1], `${context}: bookend`);
-    if (bookendGroups.length !== 1 || bookendGroups[0].count !== 1) {
-      throw new Error(`${context}: around requires one unrepeated bookend duration`);
-    }
-    const middleGroups = parseGenericGroupTerms(aroundMatch[2], `${context}: middle`);
-    return expandGenericGroups([...bookendGroups, ...middleGroups, ...bookendGroups], canonicalLabel, kind, context);
-  }
 
   const groups = parseGenericGroupTerms(expression, `${context}: group`);
   if (groups.length < 2) throw new Error(`${context}: grouped duration expression must contain at least two terms`);
@@ -422,6 +409,9 @@ function getGenericGroupHardInvalidReason(command) {
   const expression = (colonIndex >= 0 ? source.slice(0, colonIndex) : source).trim();
   if (!/[+]/.test(expression) && !/\baround\b/i.test(expression)) return null;
 
+  if (/\baround\b/i.test(expression)) {
+    return "grouped generic syntax uses +, not around";
+  }
   if (/\b\d+\s*alt\b/i.test(expression)) {
     return "grouped generic syntax cannot contain alt";
   }

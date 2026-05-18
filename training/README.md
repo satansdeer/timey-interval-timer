@@ -37,10 +37,11 @@ node scripts/training/build-timer-sft.mjs \
   --out-dir training/generated-dsl-compressed-end-user-requests
 ```
 
-That dataset currently has 1121 train rows, 194 validation rows, and 49 hard
+That dataset currently has 1194 train rows, 207 validation rows, and 62 hard
 validation rows. It adds broad phrasing and contrast categories for
-`user-around-contrast`, `user-generic-surface`, `user-duration-surface`, and
-`user-label-surface`.
+`generic-position-hard`, `generic-timers-hard`, `user-around-contrast`,
+`user-around-regression-guard`, `user-generic-surface`,
+`user-duration-surface`, and `user-label-surface`.
 
 ## DSL Format
 
@@ -63,11 +64,13 @@ Supported dense forms:
 - `5alt 45s: Rest | 45s: Work` emits 5 total alternating timers.
 - `7x 40s: Timer` emits 7 generic timers; the parser numbers them internally.
 - `8m + 4x1m + 8m: Timer` emits ordered generic timer groups with one shared label.
-- `4m around 5x30s: Timer` emits equal generic bookends around a middle group.
+- `4m + 5x30s + 4m: Timer` emits equal generic bookends around a middle group.
 
-The grouped `+` and `around` forms are intentionally generic-only: they must
-use `Timer` as the label and cannot wrap `alt`, work/rest blocks, warmup, or
-cooldown.
+The grouped `+` form is intentionally generic-only: it must use `Timer` as the
+label and cannot wrap `alt`, work/rest blocks, warmup, or cooldown. `around` is
+intentionally not a Timey DSL token; it overgeneralized into invalid model
+outputs during training and is now rejected by the parser as a semantic-invalid
+grouped form.
 
 The final `END` line is a training and evaluation stop marker. The parser strips
 it before comparison, so the timer syntax remains valid human input.
@@ -175,8 +178,15 @@ The staged generic-then-replay experiment is recorded in
 `training/eval-runs/phase4e-staged-training/`. Its best checkpoint reached
 181/207 strict with `user-generic-surface` 4/8, `generic-position` 4/5, and
 `generic-position-hard` 6/10, but still had 3/207 semantic-invalid raw outputs.
-No checkpoint was promoted; the next step is residual hard-row generation from
-those remaining invalid shapes.
+No checkpoint was promoted; the residual hard-row plan was superseded by the
+canonical `+` migration below.
+
+The canonical `+` migration is recorded in
+`training/eval-runs/phase4f-plus-canonical/`. It removed `around` from target
+DSL generation and regenerated both compressed DSL datasets. The best local
+continuation reached 172/207 strict with 2/207 semantic-invalid outputs from
+the staged checkpoint. The deployed-checkpoint control stayed at 0/207
+semantic-invalid but only reached 162/207 strict. No checkpoint was promoted.
 
 ## Results
 
@@ -204,9 +214,9 @@ list variants covered by the shared deterministic generic-list repair in the
 browser path.
 
 The current dataset adds compact generic group targets for those remaining raw
-model misses. Symmetric generic bookends use `around`; asymmetric generic
-sequences use `+`. This is intended to reduce endpoint-copy and middle-run
-duplication errors during the next focused continuation run.
+model misses. All generic group targets use `+`, including symmetric bookends.
+This is intended to reduce endpoint-copy and middle-run duplication errors
+without teaching a second grouped token that the model can overgeneralize.
 
 The user-request expansion was measured in
 `training/eval-runs/phase6-user-request-expansion/`. It improved the new
@@ -215,10 +225,11 @@ The user-request expansion was measured in
 plain-timer `user-generic-surface` cases are now covered by deterministic
 generic-sequence repair in the browser path.
 
-The next model-first experiment should generate train-only residual hard rows
-from the few remaining invalid `around` outputs, then continue from the best
-staged checkpoint with raw Python/HF and raw browser ONNX gates before any
-promotion.
+The next model-first experiment should focus on first-pass correctness for
+generic endpoints, middle counts, and duration-copy errors under the canonical
+`+` syntax. A checkpoint remains blocked from promotion unless raw Python/HF
+semantic-invalid is 0/207 and raw browser ONNX testing matches the same
+category-level behavior.
 
 ## Browser Export
 

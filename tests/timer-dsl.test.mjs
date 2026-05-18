@@ -17,7 +17,7 @@ assert.deepEqual(parseTimerDsl("2x2m30s: Step").timers, [
   { label: "Step", durationSeconds: 150, kind: "other" },
 ]);
 
-assert.deepEqual(parseTimerDsl("4m around 5x30s: Timer").timers.map(({ label, durationSeconds, kind }) => [
+assert.deepEqual(parseTimerDsl("4m + 5x30s + 4m: Timer").timers.map(({ label, durationSeconds, kind }) => [
   label,
   durationSeconds,
   kind,
@@ -50,8 +50,9 @@ assert.deepEqual(parseTimerDsl("1m: Run around, 30s: Warm + Cool").timers, [
   { label: "Warm + Cool", durationSeconds: 30, kind: "warmup" },
 ]);
 
-assert.throws(() => parseTimerDsl("4m around 5x30s: Warmup"), /must use Timer/);
-assert.throws(() => parseTimerDsl("12m around 5alt 45s: Rest | 45s: Work"), /cannot contain alt|expected duration|must use Timer/);
+assert.throws(() => parseTimerDsl("4m around 5x30s: Timer"), /uses \+, not around/);
+assert.throws(() => parseTimerDsl("4m around 5x30s: Warmup"), /uses \+, not around/);
+assert.throws(() => parseTimerDsl("12m around 5alt 45s: Rest | 45s: Work"), /uses \+, not around/);
 
 assert.deepEqual(parseTimerDsl("4x 1m: Rest | 1m: Work").timers.map(({ label, durationSeconds, kind }) => [
   label,
@@ -122,8 +123,6 @@ for (const prefix of [
   "8m: Warmup 4x",
   "4x",
   "4x ",
-  "4m around",
-  "4m aroun",
   "4m +",
   "4m + 5x",
   "4x 1m: Rest |",
@@ -135,11 +134,15 @@ for (const prefix of [
   assert.equal(isTimerDslPrefix(prefix), true, `${JSON.stringify(prefix)} should be a valid prefix`);
 }
 
-for (const invalidPrefix of ["Warmup", "x 1m: Timer", "8m Warmup", "1m: Rest | abc"]) {
+for (const invalidPrefix of ["Warmup", "x 1m: Timer", "8m Warmup", "1m: Rest | abc", "4m aroun"]) {
   assert.equal(isTimerDslPrefix(invalidPrefix), false, `${JSON.stringify(invalidPrefix)} should be invalid`);
 }
 
 for (const hardInvalidPrefix of [
+  "4m around",
+  "4m around 5x30s:",
+  "4m around 5x30s: T",
+  "4m around 5x30s: Timer",
   "12m around 5alt",
   "12m around 5alt 45s",
   "12m around 5x45s: R",
@@ -155,10 +158,6 @@ for (const hardInvalidPrefix of [
 }
 
 for (const allowedGroupedPrefix of [
-  "4m around",
-  "4m around 5x30s:",
-  "4m around 5x30s: T",
-  "4m around 5x30s: Timer",
   "30s + 5x10s + 1m: Tim",
   "1m: Run around",
 ]) {
@@ -177,5 +176,6 @@ assert.equal(isCompleteTimerDsl("8m: Warmup 4"), false);
 assert.equal(isCompleteTimerDsl("4m around 5x30s: Warmup"), false);
 assert.deepEqual(getTimerDslPrefixState("4x 1m: Rest |").reason, "completion");
 assert.deepEqual(getTimerDslPrefixState("12m around 5alt").reason, "semantic-invalid");
+assert.deepEqual(getTimerDslPrefixState("4m around 5x30s: Timer").reason, "semantic-invalid");
 
 console.log("timer DSL tests passed");

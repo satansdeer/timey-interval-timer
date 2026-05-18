@@ -60,9 +60,9 @@ Current runtime:
 - `llm-planner.js` uses Transformers.js only for tokenization.
 - It uses raw ONNX Runtime Web for encoder/decoder inference.
 - Beam search is implemented locally in `llm-planner.js`.
-- Beam search rejects semantic dead-end grouped DSL branches, such as
-  `around` with `alt` or non-`Timer` labels, before falling back to any
-  otherwise invalid token.
+- Beam search rejects semantic dead-end grouped DSL branches, including the
+  old `around` grouped syntax and `+` groups with `alt`, block separators, or
+  non-`Timer` labels, before falling back to any otherwise invalid token.
 - `TINY_TIMER_NUM_BEAMS = 4`
 - `TINY_TIMER_TOPK_PER_BEAM = 8`
 - `TINY_TIMER_MAX_INPUT_TOKENS = 160`
@@ -80,6 +80,10 @@ Current dataset:
 - Total rows: 916
 - Dataset version in `scripts/training/timer-sft-lib.mjs`: `2026-05-18`
 - Target format: compressed Timey DSL with final `END` token for training.
+- Generic group target syntax is canonical `+` only:
+  `4m + 5x30s + 4m: Timer`.
+- `around` may appear in natural-language user prompts and labels, but it is
+  not a valid grouped target DSL token.
 
 Current opt-in expanded dataset:
 
@@ -87,11 +91,14 @@ Current opt-in expanded dataset:
   `training/generated-dsl-compressed-end-user-requests/`
 - Build flags:
   `--phase4-hard-data --user-request-expansion`
-- Train rows: 1121
-- Validation rows: 194
-- Hard validation rows: 49
+- Train rows: 1194
+- Validation rows: 207
+- Hard validation rows: 62
 - New categories:
+- `generic-position-hard`
+- `generic-timers-hard`
   - `user-around-contrast`
+  - `user-around-regression-guard`
   - `user-generic-surface`
   - `user-duration-surface`
   - `user-label-surface`
@@ -105,9 +112,16 @@ Current validation categories:
 - `explicit-label-copy`
 - `explicit-sequence`
 - `generic-position`
+- `generic-position-hard`
 - `generic-timers`
+- `generic-timers-hard`
 - `individual-middle`
 - `pairs`
+- `user-around-contrast`
+- `user-around-regression-guard`
+- `user-duration-surface`
+- `user-generic-surface`
+- `user-label-surface`
 
 Current real-browser acceptance categories:
 
@@ -710,8 +724,8 @@ Risks:
 
 ### Phase 4B: Compact Generic Group DSL
 
-Status: completed 2026-05-18; parser/dataset change kept, no checkpoint
-promoted.
+Status: completed 2026-05-18; superseded by Phase 4F canonical `+` syntax, no
+checkpoint promoted.
 
 Hypothesis:
 
@@ -719,27 +733,37 @@ Generic positional failures are partly caused by the target DSL requiring the
 model to repeat endpoint lines independently. A denser generic syntax should
 let the model express the same sequence with fewer copied facts.
 
-Implemented syntax in `timer-dsl.js`:
+Initial syntax tried in `timer-dsl.js`:
 
 ```text
 4m around 5x30s: Timer
 30s + 5x10s + 1m: Timer
 ```
 
-Meaning:
+Original meaning:
 
 - `around` is equal generic bookends around a middle generic group.
 - `+` is an ordered generic group chain, including asymmetric endpoints.
 - `5x30s` is accepted as no-space repeat shorthand, alongside the older
   `5x 30s`.
 
+Superseding decision:
+
+- `around` is no longer valid target DSL. It overgeneralized into invalid
+  warmup/cooldown and work/rest outputs.
+- Matching bookends now use the same `+` form as asymmetric groups:
+  `4m + 5x30s + 4m: Timer`.
+- The parser still allows labels containing `around`, such as
+  `1m: Run around`.
+
 Dataset changes:
 
 - Regenerated `training/generated-dsl-compressed-end/`.
 - Regenerated `training/generated-dsl-compressed-end-phase4-hard/`.
 - Splits and category counts stayed the same.
-- Generic bookend targets now use `around` when endpoints match.
-- Asymmetric generic sequences now use `+`.
+- Historical Phase 4B targets used `around` when endpoints matched and `+`
+  otherwise. Phase 4F regenerated tracked datasets so all generic group targets
+  now use `+`.
 - Warmup/cooldown, work/rest, pair, alt, and explicit-label targets keep the
   existing syntax.
 
@@ -777,7 +801,8 @@ Conclusion:
 Follow-up semantic constraint status:
 
 - Implemented in `timer-dsl.js` and `llm-planner.js`.
-- `around` and `+` grouped forms must use `Timer` as the label.
+- Old `around` grouped forms are rejected as semantic-invalid.
+- `+` grouped forms must use `Timer` as the label.
 - Grouped forms cannot contain `alt` or `|` block separators.
 - Browser beam search discards those semantic dead ends before considering
   fallback candidates.
@@ -792,8 +817,7 @@ Hypothesis:
 
 Real-user robustness needs broader phrasing than the original synthetic
 templates, especially contrast rows where words like `around`, `bookend`, and
-`between` appear but the correct output is not the compact generic `around`
-syntax.
+`between` appear but the correct output is not grouped generic syntax.
 
 Implemented dataset flag:
 
@@ -816,16 +840,23 @@ Added categories:
   - target must stay old syntax, not grouped generic syntax
 - `user-generic-surface`
   - plain timer sequences with generic bookends and middle groups
-  - target uses `around` or `+` when appropriate
+  - target uses canonical `+` grouped syntax
 - `user-duration-surface`
   - variants such as `half a minute`, `0:45`, `one and a half minutes`
 - `user-label-surface`
   - named timer sequences that must preserve exact labels and order
 
-Validation:
+Initial Phase 4C validation:
 
 - Dataset validation passed: 1364 total records.
 - Hard validation rows: 49.
+
+Current regenerated Phase 4F dataset:
+
+- Dataset validation passed: 1463 expanded records.
+- Hard validation rows: 62.
+- All assistant targets use canonical `+`; no assistant target contains
+  `around`.
 
 Run artifact:
 
@@ -1025,17 +1056,80 @@ Next model-first training task:
     categories.
   - Blind replay appears to plateau with a few stubborn invalid `around` rows.
 
-Next model-first training task:
+Superseded next task:
 
-- Generate train-only residual hard rows from these remaining invalid shapes and
-  nearby paraphrases:
-  - `5m around 4alt 45s: Work | 45s: Rest 5m: Cooldown END`
-  - `5m around 5x 45s: Rest | 45s: Work 5m: Cooldown END`
-  - `12m around 8alt 30s: Rest | 30s: Work 9m: Cooldown END`
-- Rebuild `training/generated-dsl-compressed-end-user-requests/`.
-- Continue from the best staged checkpoint with a short hard-row pass.
-- Promotion remains blocked unless raw category summaries improve and
-  `semanticInvalid` reaches 0/207 in Python/HF before raw browser ONNX testing.
+- The earlier plan was to add residual train-only rows for the last invalid
+  `around` shapes. This was superseded by Phase 4F, which removed `around` from
+  the target DSL entirely and retrained/evaluated against canonical `+`.
+
+### Phase 4F: Canonical `+` Generic DSL
+
+Status: completed 2026-05-18; parser/dataset change kept, no checkpoint
+promoted.
+
+Artifact:
+
+- `training/eval-runs/phase4f-plus-canonical/README.md`
+
+Hypothesis:
+
+The `around` token created an avoidable overgeneralization path. Using one
+generic grouping form for both symmetric and asymmetric generic sequences should
+reduce semantic-invalid output and keep the DSL easier to maintain.
+
+Implemented:
+
+- Removed `around` from canonical generator output in
+  `scripts/training/timer-sft-lib.mjs`.
+- `timer-dsl.js` now rejects grouped `around` as semantic-invalid.
+- Normal labels containing `around` remain valid.
+- Regenerated tracked datasets:
+  - `training/generated-dsl-compressed-end/`: 771 train, 145 validation
+  - `training/generated-dsl-compressed-end-user-requests/`: 1194 train,
+    207 validation, 62 hard validation
+- Verified no assistant target contains `around`.
+
+Baselines on the 207-row expanded validation set:
+
+| Source checkpoint | Strict | Parseable | Semantic-invalid |
+| --- | ---: | ---: | ---: |
+| deployed `t5-efficient-tiny-positional-generic-lr1e-5/checkpoint-250` | 159/207 | 205/207 | 0/207 |
+| staged `phase4e-staged-final-cleanup-lr1e-5/checkpoint-100` | 165/207 | 183/207 | 24/207 |
+
+Continuation results:
+
+| Run | Best step | Strict | Parseable | Semantic-invalid |
+| --- | ---: | ---: | ---: | ---: |
+| `phase4f-plus-canonical-staged-lr5e-6` | 750 | 172/207 | 204/207 | 2/207 |
+| `phase4f-plus-canonical-deployed-lr5e-6` | 750 | 162/207 | 198/207 | 0/207 |
+
+Best staged-origin step 750 category notes:
+
+- `generic-position`: 1/5
+- `generic-position-hard`: 1/10
+- `user-generic-surface`: 3/8
+- `generic-timers-hard`: 4/6
+- `user-around-contrast`: 15/20
+- `user-around-regression-guard`: 9/13
+
+Remaining semantic-invalid outputs at best staged-origin step:
+
+```text
+3m around 8x1m: Timer END
+12m + 8x30s: Rest | 30s: Work 9m: Cooldown END
+```
+
+Conclusion:
+
+- Canonical `+` is the right DSL/source-of-truth direction.
+- Do not promote any Phase 4F checkpoint.
+- The staged checkpoint can partly unlearn `around`, but generic-position
+  accuracy collapses compared with the older `around` target.
+- The deployed checkpoint stays semantically safe but does not learn the hard
+  generic-position task enough.
+- Next model-first work should target first-pass generic endpoint, middle-count,
+  and duration-copy correctness under `+`, while keeping `semanticInvalid` at
+  0/207.
 
 ### Phase 5: Quantization-Aware Continuation
 

@@ -34,12 +34,11 @@ export const DSL_SYSTEM_PROMPT = [
   "Use compact elapsed time: 8m, 45s, 1m30s, or 1h5m.",
   "A single timer is duration: label.",
   "Use Nx duration: label to repeat the same timer N times.",
-  "For ordered generic timer groups, use duration + Nxduration + duration: label.",
-  "When equal generic bookends wrap a middle group, use duration around Nxduration: label.",
+  "For ordered generic timer groups, including matching bookends, use duration + Nxduration + duration: label.",
   "Use Nx duration: label | duration: label to repeat a full block N times.",
   "Use Nalt duration: label | duration: label for N total alternating timers.",
   "Example output: 8m: Warmup\\n5alt 45s: Rest | 45s: Work\\n9m: Cooldown.",
-  "Example generic output: 4m around 5x30s: Timer.",
+  "Example generic output: 4m + 5x30s + 4m: Timer.",
   "Warmup and cooldown are separate lines when requested.",
   "Intervals, steps, timers, alterations, and alternations are individual middle timers unless the request says each block, round, cycle, set, or step contains both rest and work.",
   "Blocks, rounds, cycles, and sets of rest/work are repeated pairs.",
@@ -297,15 +296,6 @@ function formatGenericGroupCommand(groups) {
   if (groups.length === 1) {
     const [[count, seconds]] = groups;
     return formatRepeatCommand(count, timer("Timer", seconds, "other"));
-  }
-
-  if (
-    groups.length === 3 &&
-    groups[0][0] === 1 &&
-    groups[2][0] === 1 &&
-    groups[0][1] === groups[2][1]
-  ) {
-    return `${formatCompactDuration(groups[0][1])} around ${formatGenericGroupTerm(groups[1])}: Timer`;
   }
 
   return `${groups.map(formatGenericGroupTerm).join(" + ")}: Timer`;
