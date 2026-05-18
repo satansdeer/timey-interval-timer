@@ -171,6 +171,13 @@ outputs; the balanced guard sweep keeps semantic-invalid at 0/207 and improves
 around contrast rows, but does not recover generic-position capability, so no
 checkpoint was promoted.
 
+The staged generic-then-replay experiment is recorded in
+`training/eval-runs/phase4e-staged-training/`. Its best checkpoint reached
+181/207 strict with `user-generic-surface` 4/8, `generic-position` 4/5, and
+`generic-position-hard` 6/10, but still had 3/207 semantic-invalid raw outputs.
+No checkpoint was promoted; the next step is residual hard-row generation from
+those remaining invalid shapes.
+
 ## Results
 
 The production checkpoint is:
@@ -208,9 +215,10 @@ The user-request expansion was measured in
 plain-timer `user-generic-surface` cases are now covered by deterministic
 generic-sequence repair in the browser path.
 
-The next model-first experiment should be staged: first a short generic-focused
-phase, then a lower-rate anti-around/core replay phase, with raw Python/HF and
-raw browser ONNX gates before any promotion.
+The next model-first experiment should generate train-only residual hard rows
+from the few remaining invalid `around` outputs, then continue from the best
+staged checkpoint with raw Python/HF and raw browser ONNX gates before any
+promotion.
 
 ## Browser Export
 

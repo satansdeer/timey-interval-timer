@@ -994,15 +994,48 @@ Anti-around guard sweep:
 
 Next model-first training task:
 
-- Use a staged curriculum instead of one global weighting recipe:
-  1. short generic-focused phase to recover `user-generic-surface`,
-     `generic-position`, and `generic-position-hard` gains;
-  2. lower-rate anti-around/core replay phase to push `semanticInvalid` back to
-     zero and protect `count-middle`, `individual-middle`, `pairs`, and
-     `core-regression`;
-  3. evaluate raw Python/HF, then raw browser ONNX, before any promotion.
-- Promotion remains blocked unless raw category summaries improve without
-  relying on deterministic repair.
+- Completed staged curriculum:
+  - Artifact:
+    `training/eval-runs/phase4e-staged-training/README.md`
+  - Generic phase:
+    `training/seq2seq-runs/phase4e-staged-generic-lr1e-5/`
+  - Replay phases:
+    - `training/seq2seq-runs/phase4e-staged-replay-lr2e-6/`
+    - `training/seq2seq-runs/phase4e-staged-replay-lr5e-6/`
+    - `training/seq2seq-runs/phase4e-staged-cleanup-lr5e-6/`
+    - `training/seq2seq-runs/phase4e-staged-final-cleanup-lr1e-5/`
+- Best staged checkpoint:
+  `training/seq2seq-runs/phase4e-staged-final-cleanup-lr1e-5/checkpoint-100`
+- Best staged result:
+  - strict 181/207
+  - parseable 204/207
+  - semantic-invalid 3/207
+  - `user-generic-surface`: 4/8
+  - `generic-position`: 4/5
+  - `generic-position-hard`: 6/10
+  - `user-around-contrast`: 14/20
+  - `user-around-regression-guard`: 9/13
+  - `count-middle`: 35/35
+  - `individual-middle`: 25/26
+  - `pairs`: 9/9
+- Conclusion:
+  - Do not promote because raw `semanticInvalid` is still non-zero.
+  - Staging works better than one-shot balanced training for raw capability:
+    it recovers generic-position behavior and preserves core/count/pair
+    categories.
+  - Blind replay appears to plateau with a few stubborn invalid `around` rows.
+
+Next model-first training task:
+
+- Generate train-only residual hard rows from these remaining invalid shapes and
+  nearby paraphrases:
+  - `5m around 4alt 45s: Work | 45s: Rest 5m: Cooldown END`
+  - `5m around 5x 45s: Rest | 45s: Work 5m: Cooldown END`
+  - `12m around 8alt 30s: Rest | 30s: Work 9m: Cooldown END`
+- Rebuild `training/generated-dsl-compressed-end-user-requests/`.
+- Continue from the best staged checkpoint with a short hard-row pass.
+- Promotion remains blocked unless raw category summaries improve and
+  `semanticInvalid` reaches 0/207 in Python/HF before raw browser ONNX testing.
 
 ### Phase 5: Quantization-Aware Continuation
 
