@@ -11,7 +11,7 @@ import {
   validateTimerDslTimer as validateTimer,
 } from "../../timer-dsl.js";
 
-export const DATASET_VERSION = "2026-05-17";
+export const DATASET_VERSION = "2026-05-18";
 export const DEFAULT_USER_FORMAT = "app";
 export const DEFAULT_TARGET_FORMAT = "json";
 export const DSL_END_TOKEN = TIMER_DSL_END_TOKEN;
@@ -73,6 +73,7 @@ const WORD_NUMBERS = {
 
 export function buildTimerSftExamples({
   dslEndToken = false,
+  includePhase4HardData = false,
   targetFormat = DEFAULT_TARGET_FORMAT,
   userFormat = DEFAULT_USER_FORMAT,
   systemPrompt = null,
@@ -88,7 +89,7 @@ export function buildTimerSftExamples({
       ? `${baseSystemPrompt} Finish with ${DSL_END_TOKEN} on its own final line.`
       : baseSystemPrompt;
 
-  for (const spec of buildSpecs()) {
+  for (const spec of buildSpecs({ includePhase4HardData })) {
     if (userFormat === "natural" && spec.correctionRequest) continue;
 
     const assistantContent =
@@ -120,6 +121,9 @@ export function buildTimerSftExamples({
       metadata: {
         userRequest: spec.request,
         expectedTimers: spec.timers,
+        ...(spec.source ? { source: spec.source } : {}),
+        ...(spec.sourceCategory ? { sourceCategory: spec.sourceCategory } : {}),
+        ...(spec.hardValidation ? { hardValidation: true } : {}),
       },
     };
 
@@ -133,13 +137,16 @@ export function buildTimerSftExamples({
 export function splitTimerSftExamples(records, { validationRatio = 0.18 } = {}) {
   const train = [];
   const validation = [];
+  const hardValidation = [];
   const flexibleByCategory = new Map();
 
   for (const record of records) {
     if (record.split === "train") {
       train.push(withoutSplit(record));
     } else if (record.split === "validation") {
-      validation.push(withoutSplit(record));
+      const prepared = withoutSplit(record);
+      validation.push(prepared);
+      if (prepared.metadata?.hardValidation) hardValidation.push(prepared);
     } else {
       const group = flexibleByCategory.get(record.category) ?? [];
       group.push(record);
@@ -152,14 +159,17 @@ export function splitTimerSftExamples(records, { validationRatio = 0.18 } = {}) 
     const validationCount = Math.max(1, Math.round(sorted.length * validationRatio));
 
     for (let index = 0; index < sorted.length; index += 1) {
+      const prepared = withoutSplit(sorted[index]);
       const target = index < validationCount ? validation : train;
-      target.push(withoutSplit(sorted[index]));
+      target.push(prepared);
+      if (index < validationCount && prepared.metadata?.hardValidation) hardValidation.push(prepared);
     }
   }
 
   return {
     train: train.sort(compareIds),
     validation: validation.sort(compareIds),
+    hardValidation: hardValidation.sort(compareIds),
   };
 }
 
@@ -342,7 +352,7 @@ export function readAssistantTarget(record) {
     : parseTimerJson(assistant.content, `${record.id}: assistant target`).timers;
 }
 
-function buildSpecs() {
+function buildSpecs({ includePhase4HardData = false } = {}) {
   const specs = [];
   const add = (category, request, timers, options = {}) => {
     specs.push({ category, request, timers, ...options });
@@ -358,6 +368,7 @@ function buildSpecs() {
   addCountStressSpecs(add);
   addExplicitLabelCopyStressSpecs(add);
   addExplicitLabelCopyTrainOnlySpecs(add);
+  if (includePhase4HardData) addPhase4HardGenericSpecs(add);
 
   return specs;
 }
@@ -916,6 +927,275 @@ function addExplicitSequenceSpecs(add) {
   for (const sequence of sequences) {
     add("explicit-sequence", sequence.request, sequence.timers);
   }
+}
+
+function addPhase4HardGenericSpecs(add) {
+  addPhase4HardGenericPositionSpecs(add);
+  addPhase4HardGenericTimerSpecs(add);
+}
+
+function addPhase4HardGenericPositionSpecs(add) {
+  const templates = [
+    ({ leftDuration, middleCount, middleDuration, rightDuration }) =>
+      `${leftDuration} timer, ${middleCount} ${middleDuration} timers, ${rightDuration} timer`,
+    ({ leftDuration, middleCount, middleDuration, rightDuration }) =>
+      `make a ${leftDuration} timer, then ${middleCount} ${middleDuration} timers, then another ${rightDuration} timer`,
+    ({ leftDuration, middleCount, middleDuration, rightDuration }) =>
+      `first timer is ${leftDuration}; middle is ${middleCount} ${middleDuration} timers; final timer is ${rightDuration}`,
+    ({ leftDuration, middleCount, middleDuration, rightDuration }) =>
+      `start with ${leftDuration}, add ${middleCount} timers of ${middleDuration}, finish with ${rightDuration}`,
+    ({ leftDuration, middleCount, middleDuration, rightDuration }) =>
+      `bookends are ${leftDuration} and ${rightDuration}; between them use ${middleCount} ${middleDuration} timers`,
+    ({ leftDuration, middleCount, middleDuration, rightDuration }) =>
+      `outside timers are ${leftDuration} then ${rightDuration}, with ${middleCount} ${middleDuration} timers inside`,
+    ({ leftDuration, middleCount, middleDuration, rightDuration }) =>
+      `one ${leftDuration} timer at the beginning, ${middleCount} ${middleDuration} timers in the middle, one ${rightDuration} timer at the end`,
+    ({ leftDuration, middleCount, middleDuration, rightDuration }) =>
+      `sandwich ${middleCount} ${middleDuration} timers between a ${leftDuration} timer and a ${rightDuration} timer`,
+  ];
+  const symmetricCases = [
+    [480, 4, 60],
+    [240, 5, 30],
+    [90, 6, 10],
+    [120, 4, 45],
+    [180, 8, 60],
+    [20, 7, 5],
+    [300, 5, 60],
+    [45, 5, 15],
+    [360, 4, 30],
+    [10, 8, 5],
+    [60, 5, 20],
+    [30, 3, 10],
+  ];
+  const asymmetricCases = [
+    [60, 5, 20, 90],
+    [90, 4, 15, 120],
+    [30, 6, 10, 45],
+    [120, 3, 30, 180],
+    [20, 8, 5, 40],
+    [240, 5, 45, 300],
+  ];
+
+  let variant = 0;
+  for (const [outerSeconds, middleCount, middleSeconds] of symmetricCases) {
+    for (let offset = 0; offset < templates.length; offset += 1) {
+      const template = templates[(variant + offset) % templates.length];
+      addPhase4HardGenericPositionSpec(add, template, {
+        split: "train",
+        leftSeconds: outerSeconds,
+        middleCount,
+        middleSeconds,
+        rightSeconds: outerSeconds,
+        variant: variant + offset,
+      });
+    }
+    variant += templates.length;
+  }
+
+  for (const [leftSeconds, middleCount, middleSeconds, rightSeconds] of asymmetricCases) {
+    for (let offset = 0; offset < 4; offset += 1) {
+      const template = templates[(variant + offset) % templates.length];
+      addPhase4HardGenericPositionSpec(add, template, {
+        split: "train",
+        leftSeconds,
+        middleCount,
+        middleSeconds,
+        rightSeconds,
+        variant: variant + offset,
+      });
+    }
+    variant += 4;
+  }
+
+  const hardValidationCases = [
+    [480, 4, 60, 480],
+    [240, 5, 30, 240],
+    [90, 6, 10, 90],
+    [120, 4, 45, 120],
+    [180, 8, 60, 180],
+    [20, 7, 5, 20],
+    [75, 6, 15, 75],
+    [150, 3, 20, 210],
+    [30, 5, 10, 60],
+    [360, 4, 45, 360],
+  ];
+  const hardValidationTemplates = [
+    ({ leftDuration, middleCount, middleDuration, rightDuration }) =>
+      `first block ${leftDuration}, then ${middleCount} short timers of ${middleDuration}, and a last block of ${rightDuration}`,
+    ({ leftDuration, middleCount, middleDuration, rightDuration }) =>
+      `I want ${leftDuration} up front, ${middleCount} ${middleDuration} timers between, ${rightDuration} at the end`,
+    ({ leftDuration, middleCount, middleDuration, rightDuration }) =>
+      `put the ${middleCount} ${middleDuration} timers between the opening ${leftDuration} timer and closing ${rightDuration} timer`,
+    ({ leftDuration, middleCount, middleDuration, rightDuration }) =>
+      `beginning ${leftDuration}; inside ${middleCount} timers lasting ${middleDuration}; ending ${rightDuration}`,
+    ({ leftDuration, middleCount, middleDuration, rightDuration }) =>
+      `one ${leftDuration} timer, followed by ${middleCount} ${middleDuration} timers, followed by one ${rightDuration} timer`,
+  ];
+
+  for (const [leftSeconds, middleCount, middleSeconds, rightSeconds] of hardValidationCases) {
+    const template = hardValidationTemplates[variant % hardValidationTemplates.length];
+    addPhase4HardGenericPositionSpec(add, template, {
+      split: "validation",
+      hardValidation: true,
+      leftSeconds,
+      middleCount,
+      middleSeconds,
+      rightSeconds,
+      variant,
+    });
+    variant += 1;
+  }
+}
+
+function addPhase4HardGenericPositionSpec(
+  add,
+  template,
+  { split, hardValidation = false, leftSeconds, middleCount, middleSeconds, rightSeconds, variant },
+) {
+  add(
+    "generic-position-hard",
+    template({
+      leftDuration: durationText(leftSeconds),
+      middleCount: wordOrNumber(middleCount, variant),
+      middleDuration: durationText(middleSeconds),
+      rightDuration: durationText(rightSeconds),
+    }),
+    genericTimers([
+      [1, leftSeconds],
+      [middleCount, middleSeconds],
+      [1, rightSeconds],
+    ]),
+    {
+      split,
+      hardValidation,
+      source: "phase4-template",
+      sourceCategory: "generic-position",
+    },
+  );
+}
+
+function addPhase4HardGenericTimerSpecs(add) {
+  const sequenceTemplates = [
+    ({ firstDuration, middleCount, middleDuration, lastDuration }) =>
+      `timer for ${firstDuration}, then ${middleCount} timers for ${middleDuration}, then timer for ${lastDuration}`,
+    ({ firstDuration, middleCount, middleDuration, lastDuration }) =>
+      `${firstDuration} once, ${middleDuration} ${middleCount} times, ${lastDuration} once`,
+    ({ firstDuration, middleCount, middleDuration, lastDuration }) =>
+      `plain timers only: ${firstDuration}, then ${middleCount} of ${middleDuration}, then ${lastDuration}`,
+    ({ firstDuration, middleCount, middleDuration, lastDuration }) =>
+      `make one timer of ${firstDuration}, ${middleCount} timers of ${middleDuration}, and one timer of ${lastDuration}`,
+  ];
+  const groupedCases = [
+    [480, 4, 60, 480],
+    [300, 5, 60, 300],
+    [120, 5, 45, 120],
+    [90, 6, 10, 90],
+    [30, 8, 5, 30],
+    [60, 4, 30, 120],
+  ];
+
+  let variant = 0;
+  for (const [firstSeconds, middleCount, middleSeconds, lastSeconds] of groupedCases) {
+    for (const template of sequenceTemplates) {
+      addPhase4HardGenericTimerSpec(add, template, {
+        split: "train",
+        firstSeconds,
+        middleCount,
+        middleSeconds,
+        lastSeconds,
+        variant,
+      });
+      variant += 1;
+    }
+  }
+
+  const singleGroupTemplates = [
+    ({ count, duration }) => `exactly ${count} standalone timers of ${duration}; do not make pairs`,
+    ({ count, duration }) => `only ${count} plain timers, every one lasts ${duration}`,
+    ({ count, duration }) => `${count} separate ${duration} timers, no warmup, no cooldown`,
+  ];
+  for (const count of [7, 8, 9, 11, 12]) {
+    for (const seconds of [5, 10, 20, 40, 75]) {
+      const template = singleGroupTemplates[variant % singleGroupTemplates.length];
+      add(
+        "generic-timers-hard",
+        template({ count: wordOrNumber(count, variant), duration: durationText(seconds) }),
+        genericTimers([[count, seconds]]),
+        {
+          split: "train",
+          source: "phase4-template",
+          sourceCategory: "generic-timers",
+        },
+      );
+      variant += 1;
+    }
+  }
+
+  const hardValidationCases = [
+    [420, 3, 45, 420],
+    [180, 5, 15, 240],
+    [75, 7, 20, 75],
+    [8, 40],
+    [11, 10],
+    [9, 75],
+  ];
+  for (const item of hardValidationCases) {
+    if (item.length === 4) {
+      const [firstSeconds, middleCount, middleSeconds, lastSeconds] = item;
+      const template = sequenceTemplates[variant % sequenceTemplates.length];
+      addPhase4HardGenericTimerSpec(add, template, {
+        split: "validation",
+        hardValidation: true,
+        firstSeconds,
+        middleCount,
+        middleSeconds,
+        lastSeconds,
+        variant,
+      });
+    } else {
+      const [count, seconds] = item;
+      const template = singleGroupTemplates[variant % singleGroupTemplates.length];
+      add(
+        "generic-timers-hard",
+        template({ count: wordOrNumber(count, variant), duration: durationText(seconds) }),
+        genericTimers([[count, seconds]]),
+        {
+          split: "validation",
+          hardValidation: true,
+          source: "phase4-template",
+          sourceCategory: "generic-timers",
+        },
+      );
+    }
+    variant += 1;
+  }
+}
+
+function addPhase4HardGenericTimerSpec(
+  add,
+  template,
+  { split, hardValidation = false, firstSeconds, middleCount, middleSeconds, lastSeconds, variant },
+) {
+  add(
+    "generic-timers-hard",
+    template({
+      firstDuration: durationText(firstSeconds),
+      middleCount: wordOrNumber(middleCount, variant),
+      middleDuration: durationText(middleSeconds),
+      lastDuration: durationText(lastSeconds),
+    }),
+    genericTimers([
+      [1, firstSeconds],
+      [middleCount, middleSeconds],
+      [1, lastSeconds],
+    ]),
+    {
+      split,
+      hardValidation,
+      source: "phase4-template",
+      sourceCategory: "generic-timers",
+    },
+  );
 }
 
 function addCorrectionSpecs(add) {

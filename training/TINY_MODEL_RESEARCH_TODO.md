@@ -589,7 +589,7 @@ Phase 3 conclusion:
 
 ### Phase 4: Teacher Distillation / Hard Data Expansion
 
-Status: pending
+Status: hard-data expansion completed 2026-05-18; no checkpoint promoted.
 
 Hypothesis:
 
@@ -611,6 +611,46 @@ Approach:
   - validation result
 - Keep a separate hard validation split to avoid training on every new hard
   case.
+
+Implemented local hard-data expansion:
+
+- Added opt-in dataset flag `--phase4-hard-data`.
+- Added parser-validated `generic-position-hard` and `generic-timers-hard`
+  examples generated from known timer specs.
+- Added hard-validation metadata and
+  `timer-sft-hard-validation.jsonl` output.
+- Preserved the committed baseline validation set by appending Phase 4 specs
+  after all existing specs.
+
+Phase 4 dataset artifact:
+
+- `training/generated-dsl-compressed-end-phase4-hard/`
+  - train: 940 rows
+  - validation: 161 rows
+  - hard validation: 16 rows
+
+Phase 4 run artifact:
+
+- `training/eval-runs/phase4-hard-data/README.md`
+
+Measured result:
+
+| Run | Best strict validation | Hard validation | Result |
+| --- | ---: | ---: | --- |
+| `phase4-final-unweighted-lr1e-5` | 143/161 | 4/16 | no improvement |
+| `phase4-final-weighted-lr1e-5` | 146/161 | 7/16 | partial hard-data improvement, no old-validation regression |
+| `phase4-final-weighted-continue500-lr1e-5` | 146/161 at step 0 | 7/16 at step 0 | further continuation overfit and regressed `count-generic` |
+
+Best checkpoint from this phase:
+
+- `training/seq2seq-runs/phase4-final-weighted-lr1e-5/checkpoint-500`
+
+Do not promote it yet:
+
+- Original regular validation remains 139/145.
+- Original `generic-position` remains 0/5.
+- Hard holdout improved from 4/16 to 7/16, but this is not enough to justify
+  export/deployment.
 
 Priority categories:
 
@@ -634,6 +674,15 @@ Acceptance:
 - Dataset validation passes.
 - Category summary improves or stays flat on old validation and hard validation.
 - Real browser acceptance remains green after training/export.
+
+Phase 4 conclusion:
+
+- Template-only hard data helps `generic-timers-hard` and a small part of
+  `generic-position-hard`, but does not fix the original `generic-position`
+  validation examples.
+- Next work should be true teacher paraphrase distillation, a DSL-level
+  bookend/group syntax, or semantic deterministic constraints for provable
+  generic-position facts.
 
 Risks:
 

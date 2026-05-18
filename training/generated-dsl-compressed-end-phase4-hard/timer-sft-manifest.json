@@ -1,0 +1,75 @@
+{
+  "datasetVersion": "2026-05-18",
+  "targetFormat": "dsl",
+  "userFormat": "natural",
+  "dslEndToken": true,
+  "phase4HardData": true,
+  "qwen3NoThink": false,
+  "validationRatio": 0.18,
+  "files": {
+    "all": "timer-sft-all.jsonl",
+    "train": "timer-sft-train.jsonl",
+    "validation": "timer-sft-validation.jsonl",
+    "hardValidation": "timer-sft-hard-validation.jsonl"
+  },
+  "all": {
+    "count": 1101,
+    "categories": {
+      "core-regression": 8,
+      "individual-middle": 144,
+      "pairs": 48,
+      "generic-timers": 9,
+      "generic-position": 91,
+      "explicit-sequence": 5,
+      "count-middle": 196,
+      "count-pairs": 120,
+      "count-generic": 117,
+      "explicit-label-copy": 120,
+      "explicit-label-copy-train": 58,
+      "generic-position-hard": 130,
+      "generic-timers-hard": 55
+    }
+  },
+  "train": {
+    "count": 940,
+    "categories": {
+      "core-regression": 6,
+      "individual-middle": 118,
+      "pairs": 39,
+      "generic-timers": 7,
+      "generic-position": 86,
+      "explicit-sequence": 4,
+      "count-middle": 161,
+      "count-pairs": 98,
+      "count-generic": 96,
+      "explicit-label-copy": 98,
+      "explicit-label-copy-train": 58,
+      "generic-position-hard": 120,
+      "generic-timers-hard": 49
+    }
+  },
+  "validation": {
+    "count": 161,
+    "categories": {
+      "core-regression": 2,
+      "individual-middle": 26,
+      "pairs": 9,
+      "generic-timers": 2,
+      "generic-position": 5,
+      "explicit-sequence": 1,
+      "count-middle": 35,
+      "count-pairs": 22,
+      "count-generic": 21,
+      "explicit-label-copy": 22,
+      "generic-position-hard": 10,
+      "generic-timers-hard": 6
+    }
+  },
+  "hardValidation": {
+    "count": 16,
+    "categories": {
+      "generic-position-hard": 10,
+      "generic-timers-hard": 6
+    }
+  }
+}

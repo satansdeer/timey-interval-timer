@@ -16,11 +16,12 @@ const args = parseArgs(process.argv.slice(2));
 const outDir = resolve(process.cwd(), args.outDir);
 const allRecords = buildTimerSftExamples({
   dslEndToken: args.dslEndToken,
+  includePhase4HardData: args.phase4HardData,
   targetFormat: args.targetFormat,
   userFormat: args.userFormat,
   systemPrompt: getSystemPrompt(args),
 });
-const { train, validation } = splitTimerSftExamples(allRecords, {
+const { train, validation, hardValidation } = splitTimerSftExamples(allRecords, {
   validationRatio: args.validationRatio,
 });
 
@@ -28,6 +29,9 @@ await mkdir(outDir, { recursive: true });
 await writeJsonl(resolve(outDir, "timer-sft-all.jsonl"), [...train, ...validation]);
 await writeJsonl(resolve(outDir, "timer-sft-train.jsonl"), train);
 await writeJsonl(resolve(outDir, "timer-sft-validation.jsonl"), validation);
+if (hardValidation.length > 0) {
+  await writeJsonl(resolve(outDir, "timer-sft-hard-validation.jsonl"), hardValidation);
+}
 await writeFile(
   resolve(outDir, "timer-sft-manifest.json"),
   `${JSON.stringify(
@@ -36,16 +40,19 @@ await writeFile(
       targetFormat: args.targetFormat,
       userFormat: args.userFormat,
       dslEndToken: args.targetFormat === "dsl" ? args.dslEndToken : false,
+      phase4HardData: args.phase4HardData,
       qwen3NoThink: args.qwen3NoThink,
       validationRatio: args.validationRatio,
       files: {
         all: "timer-sft-all.jsonl",
         train: "timer-sft-train.jsonl",
         validation: "timer-sft-validation.jsonl",
+        ...(hardValidation.length > 0 ? { hardValidation: "timer-sft-hard-validation.jsonl" } : {}),
       },
       all: summarizeRecords([...train, ...validation]),
       train: summarizeRecords(train),
       validation: summarizeRecords(validation),
+      ...(hardValidation.length > 0 ? { hardValidation: summarizeRecords(hardValidation) } : {}),
     },
     null,
     2,
@@ -53,7 +60,11 @@ await writeFile(
   "utf8",
 );
 
-console.log(`Wrote ${train.length} train and ${validation.length} validation examples to ${outDir}`);
+console.log(
+  `Wrote ${train.length} train, ${validation.length} validation` +
+    `${hardValidation.length > 0 ? `, and ${hardValidation.length} hard validation` : ""}` +
+    ` examples to ${outDir}`,
+);
 
 function writeJsonl(path, records) {
   return writeFile(path, `${records.map((record) => JSON.stringify(record)).join("\n")}\n`, "utf8");
@@ -63,6 +74,7 @@ function parseArgs(argv) {
   const parsed = {
     outDir: "training/generated",
     dslEndToken: false,
+    phase4HardData: false,
     qwen3NoThink: false,
     targetFormat: DEFAULT_TARGET_FORMAT,
     userFormat: DEFAULT_USER_FORMAT,
@@ -75,6 +87,8 @@ function parseArgs(argv) {
       parsed.outDir = argv[++index];
     } else if (arg === "--dsl-end-token") {
       parsed.dslEndToken = true;
+    } else if (arg === "--phase4-hard-data") {
+      parsed.phase4HardData = true;
     } else if (arg === "--qwen3-no-think") {
       parsed.qwen3NoThink = true;
     } else if (arg === "--target-format") {
@@ -111,6 +125,7 @@ function printHelp() {
 Options:
   --out-dir <path>             Output directory (default: training/generated)
   --dsl-end-token              End DSL assistant targets with END on a final line
+  --phase4-hard-data           Include opt-in hard generic-position/generic-timer rows
   --qwen3-no-think             Append /no_think to the system prompt for Qwen3 non-thinking mode
   --target-format <json|dsl>   Assistant target format (default: json)
   --user-format <app|natural>  App payload or raw natural-language user turns (default: app)
