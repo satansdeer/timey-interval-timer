@@ -1,9 +1,15 @@
 import { MAX_INTERVALS, extractExplicitGenericTimers, isCorrection, normalizePrompt } from "./fallback-planner.js";
-import { findTimerDslStartIndex, isCompleteTimerDsl, isTimerDslPrefix, parseTimerDsl } from "./timer-dsl.js";
+import {
+  findTimerDslStartIndex,
+  isCompleteTimerDsl,
+  isTimerDslHardInvalidPrefix,
+  isTimerDslPrefix,
+  parseTimerDsl,
+} from "./timer-dsl.js";
 
 export const TRANSFORMERS_PACKAGE_VERSION = "4.2.0";
 export const TRAINED_TINY_MODEL_ID = "timey-t5-efficient-tiny";
-export const TRAINED_TINY_MODEL_VERSION = "t5-efficient-tiny-positional-generic-lr1e-5-checkpoint-250-q8enc-q4dec-ort-beam";
+export const TRAINED_TINY_MODEL_VERSION = "t5-efficient-tiny-positional-generic-lr1e-5-checkpoint-250-q8enc-q4dec-ort-beam-semantic-groups";
 export const TRAINED_TINY_MODEL_DTYPE = "q8-encoder-q4-decoder-opset21";
 export const TRAINED_TINY_MODEL_DEVICE = "wasm";
 export const TRANSFORMERS_CDN_URL = `https://cdn.jsdelivr.net/npm/@huggingface/transformers@${TRANSFORMERS_PACKAGE_VERSION}`;
@@ -290,7 +296,7 @@ async function generateBeamSearch({ tokenizer, ort, decoder, attentionTensor, en
         const decoded = decodeTimerDslCandidate(tokenizer, outputIds);
         if (isAllowedTimerDslCandidate(decoded, done, outputIds)) {
           beamCandidates.push(candidate);
-        } else {
+        } else if (!isTimerDslHardInvalidPrefix(decoded)) {
           fallbackCandidates.push({ ...candidate, constraintFallback: true });
         }
       }
@@ -302,9 +308,12 @@ async function generateBeamSearch({ tokenizer, ort, decoder, attentionTensor, en
       }
     }
 
-    beams = candidates
+    const nextBeams = candidates
       .sort((left, right) => rankBeam(right) - rankBeam(left))
       .slice(0, TINY_TIMER_NUM_BEAMS);
+
+    if (!nextBeams.length) break;
+    beams = nextBeams;
 
     if (beams.every((beam) => beam.done)) break;
   }

@@ -41,7 +41,7 @@ Current browser model:
 - Source checkpoint:
   `training/seq2seq-runs/t5-efficient-tiny-positional-generic-lr1e-5/checkpoint-250`
 - Runtime version string in `llm-planner.js`:
-  `t5-efficient-tiny-positional-generic-lr1e-5-checkpoint-250-q8enc-q4dec-ort-beam`
+  `t5-efficient-tiny-positional-generic-lr1e-5-checkpoint-250-q8enc-q4dec-ort-beam-semantic-groups`
 - Browser model directory: `models/timey-t5-efficient-tiny/`
 - Encoder: q8 ONNX
 - Decoder: opset21 q4 ONNX for supported MatMul/Gather weights
@@ -50,7 +50,7 @@ Current browser model:
   - `/lm_head/MatMul`
 - Current model cache key in `service-worker.js`:
   `timey-model-t5-efficient-tiny-q8enc-q4dec-v1`
-- Current app cache key in `service-worker.js`: `timey-app-v42`
+- Current app cache key in `service-worker.js`: `timey-app-v43`
 - Decoder content length:
   `35,305,100` bytes
 - Total model directory is roughly 47 MB.
@@ -60,6 +60,9 @@ Current runtime:
 - `llm-planner.js` uses Transformers.js only for tokenization.
 - It uses raw ONNX Runtime Web for encoder/decoder inference.
 - Beam search is implemented locally in `llm-planner.js`.
+- Beam search rejects semantic dead-end grouped DSL branches, such as
+  `around` with `alt` or non-`Timer` labels, before falling back to any
+  otherwise invalid token.
 - `TINY_TIMER_NUM_BEAMS = 4`
 - `TINY_TIMER_TOPK_PER_BEAM = 8`
 - `TINY_TIMER_MAX_INPUT_TOKENS = 160`
@@ -755,11 +758,16 @@ Conclusion:
 ```
 
 - No Phase 4B/5 checkpoint should be exported or deployed.
-- Next useful work is either:
-  - runtime semantic constraints that allow `around` only for generic `Timer`
-    groups and never around `alt`/work-rest forms; or
-  - teacher/contrastive distillation with many negative examples where
-    warmup/cooldown and work/rest must keep the old syntax.
+
+Follow-up semantic constraint status:
+
+- Implemented in `timer-dsl.js` and `llm-planner.js`.
+- `around` and `+` grouped forms must use `Timer` as the label.
+- Grouped forms cannot contain `alt` or `|` block separators.
+- Browser beam search discards those semantic dead ends before considering
+  fallback candidates.
+- Next useful model work is teacher/contrastive distillation with many negative
+  examples where warmup/cooldown and work/rest must keep the old syntax.
 
 ### Phase 5: Quantization-Aware Continuation
 

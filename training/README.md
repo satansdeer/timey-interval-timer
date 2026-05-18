@@ -48,6 +48,10 @@ Supported dense forms:
 - `8m + 4x1m + 8m: Timer` emits ordered generic timer groups with one shared label.
 - `4m around 5x30s: Timer` emits equal generic bookends around a middle group.
 
+The grouped `+` and `around` forms are intentionally generic-only: they must
+use `Timer` as the label and cannot wrap `alt`, work/rest blocks, warmup, or
+cooldown.
+
 The final `END` line is a training and evaluation stop marker. The parser strips
 it before comparison, so the timer syntax remains valid human input.
 

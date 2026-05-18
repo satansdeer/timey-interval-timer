@@ -23,6 +23,10 @@ const TIMER_DSL_PREFIX_COMPLETIONS = [
   "round 1s: Timer",
   " around 1s: Timer",
   " + 1s: Timer",
+  "imer",
+  "mer",
+  "er",
+  "r",
   "s: Timer",
   "m: Timer",
   ": Timer",
@@ -72,12 +76,20 @@ export function getTimerDslPrefixState(content, options = {}) {
   if (canParseTimerDsl(trimmed, endToken)) {
     return { ok: true, complete: true, reason: "complete" };
   }
+  const hardInvalidReason = getTimerDslHardInvalidPrefixReason(source);
+  if (hardInvalidReason) {
+    return { ok: false, complete: false, reason: "semantic-invalid", detail: hardInvalidReason };
+  }
 
   const completion = findTimerDslPrefixCompletion(source, endToken);
   if (completion !== null) {
     return { ok: true, complete: false, reason: "completion", completion };
   }
   return { ok: false, complete: false, reason: "invalid" };
+}
+
+export function isTimerDslHardInvalidPrefix(content) {
+  return Boolean(getTimerDslHardInvalidPrefixReason(content));
 }
 
 export function findTimerDslStartIndex(text) {
@@ -369,8 +381,11 @@ function parseGenericGroupCommand(command, context) {
   if (!/[+]/.test(expression) && !/\baround\b/i.test(expression)) return null;
 
   const label = normalizeTimerLabel(match[2]);
-  const kind = inferTimerKind(label);
-  const canonicalLabel = canonicalTimerLabel(label, kind);
+  if (label.toLowerCase() !== "timer") {
+    throw new Error(`${context}: grouped generic syntax must use Timer as the label`);
+  }
+  const kind = "other";
+  const canonicalLabel = "Timer";
 
   if (/\baround\b/i.test(expression)) {
     const aroundMatch = expression.match(/^([\s\S]+?)\s+around\s+([\s\S]+)$/i);
@@ -387,6 +402,41 @@ function parseGenericGroupCommand(command, context) {
   const groups = parseGenericGroupTerms(expression, `${context}: group`);
   if (groups.length < 2) throw new Error(`${context}: grouped duration expression must contain at least two terms`);
   return expandGenericGroups(groups, canonicalLabel, kind, context);
+}
+
+function getTimerDslHardInvalidPrefixReason(content) {
+  const source = stripTimerDslEndToken(stripOutputFence(String(content || "")), TIMER_DSL_END_TOKEN);
+  const commands = splitTimerDslCommands(source);
+  if (!commands.length) return null;
+
+  for (const [index, command] of commands.entries()) {
+    const reason = getGenericGroupHardInvalidReason(command);
+    if (reason) return `line ${index + 1}: ${reason}`;
+  }
+  return null;
+}
+
+function getGenericGroupHardInvalidReason(command) {
+  const source = String(command || "").trim();
+  const colonIndex = source.indexOf(":");
+  const expression = (colonIndex >= 0 ? source.slice(0, colonIndex) : source).trim();
+  if (!/[+]/.test(expression) && !/\baround\b/i.test(expression)) return null;
+
+  if (/\b\d+\s*alt\b/i.test(expression)) {
+    return "grouped generic syntax cannot contain alt";
+  }
+  if (expression.includes("|")) {
+    return "grouped generic syntax cannot contain block separators";
+  }
+
+  if (colonIndex >= 0) {
+    const labelPrefix = normalizeTimerLabel(source.slice(colonIndex + 1)).toLowerCase();
+    if (labelPrefix && !"timer".startsWith(labelPrefix)) {
+      return "grouped generic syntax must use Timer as the label";
+    }
+  }
+
+  return null;
 }
 
 function parseGenericGroupTerms(expression, context) {

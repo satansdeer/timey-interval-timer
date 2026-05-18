@@ -203,8 +203,32 @@ Naive weighted continuation is not sufficient. It creates a clean tradeoff:
 Next useful work:
 
 1. Add runtime semantic constraints so `around` can only be generated with
-   generic `Timer` labels and cannot wrap `alt`/work-rest forms.
+   generic `Timer` labels and cannot wrap `alt`/work-rest forms. Completed
+   2026-05-18.
 2. Try teacher paraphrase/distillation into the compact DSL, with many negative
    examples where warmup/cooldown and work/rest must stay on the old syntax.
 3. If training again locally, add explicit contrastive examples rather than
    only increasing generic category weights.
+
+## Runtime Semantic Constraint Follow-Up
+
+Implemented after the training sweeps:
+
+- grouped `around` and `+` syntax must use `Timer` as the label;
+- grouped syntax cannot contain `alt` or `|`;
+- prefix validation marks those branches as `semantic-invalid`;
+- browser beam search discards semantic-invalid branches before considering
+  fallback candidates.
+
+Validation:
+
+```text
+npm test: passed
+npm run training:validate: passed
+npm run test:llm:real: passed
+  core-regression: 7/7
+  explicit-label-copy: 4/4
+  generic-count: 15/15
+  generic-position: 26/26
+npm run test:browser: passed, 4 passed / 1 skipped
+```
