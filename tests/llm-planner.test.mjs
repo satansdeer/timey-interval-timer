@@ -1,17 +1,20 @@
 import assert from "node:assert/strict";
 import {
-  buildTinyLlmMessages,
+  TRAINED_TINY_MODEL_ID,
+  TRAINED_TINY_MODEL_VERSION,
+  TRANSFORMERS_PACKAGE_VERSION,
+  TINY_TIMER_INPUT_PREFIX,
+  buildTinyLlmInput,
   getTinyLlmAssetKey,
-  selectModelId,
+  parseDirectTimerDslInput,
+  repairGenericTimerList,
   validateLlmTimers,
 } from "../llm-planner.js";
 
-const defaultTimers = [
-  { label: "Warmup", seconds: 300, kind: "warmup" },
-  { label: "High intensity", seconds: 60, kind: "work" },
-  { label: "Rest", seconds: 60, kind: "rest" },
-  { label: "Cooldown", seconds: 300, kind: "cooldown" },
-];
+assert.equal(
+  buildTinyLlmInput("8 minutes warmup"),
+  `${TINY_TIMER_INPUT_PREFIX}8 minutes warmup`,
+);
 
 assert.deepEqual(
   validateLlmTimers([
@@ -33,61 +36,59 @@ assert.throws(
   /invalid interval kind/,
 );
 
-for (const text of [
-  "I want 8 minutes warmup, then 4 alterations of high intensity and low intensity and then 8 minutes cooldown",
-  "8 minutes warmup, 6 alterating 1 minute rest / work. then 8 minutes cooldown",
-  "8 minute warmup, 8 minutes cooldown. 4 one minute intervals work/rest in the middle (1 minute each)",
-  "5 one minute timers and one 30 second",
-]) {
-  const messages = buildTinyLlmMessages({
-    text,
-    currentTimers: defaultTimers,
-    currentWorkoutShape: {
-      intervalCount: 4,
-      totalSeconds: 720,
-    },
-    conversation: [{ role: "assistant", text: "Tell me your warmup, intervals, rests, and cooldown." }],
-  });
-  const payload = JSON.parse(messages[1].content);
-
-  assert.equal(payload.correctionRequest, false, `${text}: should be a new request`);
-  assert.equal("currentTimers" in payload, false, `${text}: should not expose currentTimers`);
-  assert.equal("currentWorkoutShape" in payload, false, `${text}: should not expose currentWorkoutShape`);
-  assert.equal("conversation" in payload, false, `${text}: should not expose conversation`);
-  assert.match(messages[0].content, /Do not copy prior or default timers/);
-  assert.match(messages[0].content, /8 minutes is 480/);
-  assert.match(messages[0].content, /Never use 8 for an 8-minute timer/);
-  assert.match(messages[0].content, /Warmup 480, Work 60, Rest 60, Work 60, Rest 60, Cooldown 480/);
-}
-
-const correctionMessages = buildTinyLlmMessages({
-  text: "actually make the middle blocks 30 seconds each",
-  currentTimers: defaultTimers,
-  currentWorkoutShape: {
-    intervalCount: 4,
-    totalSeconds: 720,
-  },
-  conversation: [{ role: "user", text: "8 minute warmup, 4 work rest blocks, 8 minute cooldown" }],
-});
-const correctionPayload = JSON.parse(correctionMessages[1].content);
-assert.equal(correctionPayload.correctionRequest, true);
-assert.equal(correctionPayload.currentTimers.length, 4);
-assert.equal(correctionPayload.currentWorkoutShape.intervalCount, 4);
-assert.equal(correctionPayload.conversation.length, 1);
-
 assert.equal(
-  selectModelId({
-    prebuiltAppConfig: {
-      model_list: [
-        { model_id: "Other" },
-        { model_id: "Qwen2-0.5B-Instruct-q4f16_1-MLC" },
-      ],
-    },
-  }),
-  "Qwen2-0.5B-Instruct-q4f16_1-MLC",
+  getTinyLlmAssetKey(TRAINED_TINY_MODEL_ID),
+  `${TRANSFORMERS_PACKAGE_VERSION}:${TRAINED_TINY_MODEL_VERSION}:${TRAINED_TINY_MODEL_ID}`,
 );
 
-assert.equal(selectModelId({ prebuiltAppConfig: { model_list: [] } }), "Llama-3.2-1B-Instruct-q4f16_1-MLC");
-assert.equal(getTinyLlmAssetKey("Qwen2-0.5B-Instruct-q4f16_1-MLC"), "0.2.83:Qwen2-0.5B-Instruct-q4f16_1-MLC");
+assert.deepEqual(
+  parseDirectTimerDslInput("30 seconds: Plank, 45 seconds: Squats, 1 minute: Rest").timers,
+  [
+    { label: "Plank", seconds: 30, kind: "other" },
+    { label: "Squats", seconds: 45, kind: "other" },
+    { label: "Rest", seconds: 60, kind: "rest" },
+  ],
+);
+assert.equal(parseDirectTimerDslInput("ten one minute timers"), null);
+
+assert.deepEqual(
+  repairGenericTimerList("5 one minute timers and one 30 second", [
+    { label: "Timer 1", seconds: 60, kind: "other" },
+    { label: "Timer 2", seconds: 60, kind: "other" },
+    { label: "Timer 3", seconds: 60, kind: "other" },
+    { label: "Timer 4", seconds: 60, kind: "other" },
+    { label: "Timer 5", seconds: 60, kind: "other" },
+    { label: "Timer 6", seconds: 60, kind: "other" },
+    { label: "Timer 7", seconds: 60, kind: "other" },
+    { label: "Timer 8", seconds: 60, kind: "other" },
+    { label: "Timer 9", seconds: 60, kind: "other" },
+    { label: "Timer 10", seconds: 60, kind: "other" },
+  ]).map((timer) => timer.seconds),
+  [60, 60, 60, 60, 60, 30],
+);
+
+assert.deepEqual(
+  repairGenericTimerList("first and last timer 5minute, 5 one minute timers in between", [
+    { label: "Timer 1", seconds: 300, kind: "other" },
+  ]).map((timer) => timer.seconds),
+  [300, 60, 60, 60, 60, 60, 300],
+);
+
+assert.deepEqual(
+  repairGenericTimerList("8 minute timer, 4 one minute timers, 8 minute timer", [
+    { label: "Timer 1", seconds: 480, kind: "other" },
+    { label: "Timer 2", seconds: 60, kind: "other" },
+    { label: "Timer 3", seconds: 60, kind: "other" },
+    { label: "Timer 4", seconds: 60, kind: "other" },
+    { label: "Timer 5", seconds: 60, kind: "other" },
+  ]).map((timer) => timer.seconds),
+  [480, 60, 60, 60, 60, 480],
+);
+
+const warmupLikeModelTimers = [
+  { label: "Warmup", seconds: 300, kind: "warmup" },
+  { label: "Timer", seconds: 60, kind: "other" },
+];
+assert.equal(repairGenericTimerList("5 one minute timers", warmupLikeModelTimers), warmupLikeModelTimers);
 
 console.log("llm planner tests passed");

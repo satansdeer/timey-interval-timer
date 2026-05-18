@@ -1,0 +1,90 @@
+{
+  "model": "training/seq2seq-runs/t5-efficient-tiny-label-copy-final-lr2e-5/checkpoint-500",
+  "device": "mps",
+  "trainRecords": 707,
+  "effectiveTrainRecords": 1580,
+  "validationRecords": 144,
+  "generation": {
+    "inputFormat": "compact",
+    "evalBatchSize": 8,
+    "maxNewTokens": 64,
+    "numBeams": 4,
+    "repetitionPenalty": 1.0,
+    "noRepeatNgramSize": 0,
+    "lengthPenalty": 1.0,
+    "earlyStopping": true
+  },
+  "training": {
+    "trainOrder": "shuffle",
+    "learningRate": 1e-05,
+    "batchSize": 8,
+    "weightDecay": 0.01,
+    "maxGradNorm": 1.0,
+    "categoryWeight": {
+      "generic-position": 12,
+      "generic-timers": 4,
+      "count-generic": 2,
+      "core-regression": 4,
+      "explicit-label-copy": 4,
+      "explicit-sequence": 8,
+      "explicit-label-copy-train": 4
+    }
+  },
+  "steps": [
+    {
+      "step": 0,
+      "parseable": 144,
+      "parseableRate": 1.0,
+      "strictExact": 139,
+      "strictExactRate": 0.9653,
+      "semanticExact": 139,
+      "semanticExactRate": 0.9653,
+      "seconds": 7.063,
+      "predictions": "training/seq2seq-runs/t5-efficient-tiny-positional-generic-lr1e-5/predictions-step-0.jsonl"
+    },
+    {
+      "step": 50,
+      "parseable": 144,
+      "parseableRate": 1.0,
+      "strictExact": 139,
+      "strictExactRate": 0.9653,
+      "semanticExact": 139,
+      "semanticExactRate": 0.9653,
+      "seconds": 6.628,
+      "predictions": "training/seq2seq-runs/t5-efficient-tiny-positional-generic-lr1e-5/predictions-step-50.jsonl"
+    },
+    {
+      "step": 100,
+      "parseable": 144,
+      "parseableRate": 1.0,
+      "strictExact": 139,
+      "strictExactRate": 0.9653,
+      "semanticExact": 139,
+      "semanticExactRate": 0.9653,
+      "seconds": 6.76,
+      "predictions": "training/seq2seq-runs/t5-efficient-tiny-positional-generic-lr1e-5/predictions-step-100.jsonl"
+    },
+    {
+      "step": 250,
+      "parseable": 144,
+      "parseableRate": 1.0,
+      "strictExact": 139,
+      "strictExactRate": 0.9653,
+      "semanticExact": 139,
+      "semanticExactRate": 0.9653,
+      "seconds": 6.798,
+      "predictions": "training/seq2seq-runs/t5-efficient-tiny-positional-generic-lr1e-5/predictions-step-250.jsonl"
+    },
+    {
+      "step": 500,
+      "parseable": 144,
+      "parseableRate": 1.0,
+      "strictExact": 139,
+      "strictExactRate": 0.9653,
+      "semanticExact": 139,
+      "semanticExactRate": 0.9653,
+      "seconds": 6.971,
+      "predictions": "training/seq2seq-runs/t5-efficient-tiny-positional-generic-lr1e-5/predictions-step-500.jsonl"
+    }
+  ]
+}

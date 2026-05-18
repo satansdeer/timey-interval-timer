@@ -1,4 +1,12 @@
-export const MAX_INTERVALS = 200;
+import {
+  MAX_INTERVALS as TIMER_DSL_MAX_INTERVALS,
+  TIMER_DSL_DURATION_UNITS,
+  findTimerDslStartIndex,
+  inferTimerKind,
+  parseTimerDsl,
+} from "./timer-dsl.js";
+
+export const MAX_INTERVALS = TIMER_DSL_MAX_INTERVALS;
 
 export const KIND_META = {
   warmup: { label: "Warmup", color: "#f28c28" },
@@ -8,7 +16,32 @@ export const KIND_META = {
   other: { label: "Other", color: "#0f8b8d" },
 };
 
+const DURATION_UNITS = TIMER_DSL_DURATION_UNITS;
+const NUMBER_WORDS = new Map([
+  ["one", 1],
+  ["two", 2],
+  ["three", 3],
+  ["four", 4],
+  ["five", 5],
+  ["six", 6],
+  ["seven", 7],
+  ["eight", 8],
+  ["nine", 9],
+  ["ten", 10],
+  ["fifteen", 15],
+  ["twenty", 20],
+  ["thirty", 30],
+  ["forty", 40],
+  ["forty five", 45],
+  ["ninety", 90],
+]);
+
 export function planWithFallback(text, currentTimers = [], conversation = []) {
+  const dslTimers = extractTimerDslTimers(text);
+  if (dslTimers.length) {
+    return { timers: dslTimers.slice(0, MAX_INTERVALS), source: "fallback" };
+  }
+
   const normalized = normalizePrompt(text);
   const correction = isCorrection(normalized);
   const historicalPrompt = correction ? findHistoricalWorkoutPrompt(normalized, conversation) : null;
@@ -183,6 +216,7 @@ export function getWorkoutShape(timers) {
 export function normalizePrompt(text) {
   return replaceNumberWords(text)
     .toLowerCase()
+    .replace(/[-–—]+/g, " ")
     .replaceAll(",", " ")
     .replaceAll(";", " ")
     .replace(/\s+/g, " ")
@@ -190,25 +224,17 @@ export function normalizePrompt(text) {
 }
 
 export function inferKind(label) {
-  const value = String(label).toLowerCase();
-  if (value.includes("warmdown") || value.includes("warm down")) return "cooldown";
-  if (value.includes("warm")) return "warmup";
-  if (value.includes("cool")) return "cooldown";
-  if (
-    value.includes("low intensity") ||
-    value.includes("rest") ||
-    value.includes("recover") ||
-    value.includes("easy")
-  ) {
-    return "rest";
-  }
-  if (value.includes("work") || value.includes("intensity") || value.includes("hard")) return "work";
-  return "other";
+  return inferTimerKind(label);
 }
 
 export function isCorrection(text) {
-  return /(\bwrong\b|actually|instead|not\s+\d+|must have|should\s+(?:be|have)|should've|shoudl|correction|change it|fix it|wanted|meant|removed|too many|too few|twice as little|half as many|twice less|fewer|like (?:i )?described|at first|middle ones?)/.test(
-    text,
+  return (
+    /(\bwrong\b|actually|instead|not\s+\d+|must have|should've|shoudl|correction|change it|fix it|wanted|meant|removed|too many|too few|twice as little|half as many|twice less|fewer|like (?:i )?described|at first|middle ones?)/.test(
+      text,
+    ) ||
+    /\b(?:middle|current|previous|existing|sixth|6th|last one|first one|ones?|it|that|they|them)\b.{0,48}\bshould\s+(?:be|have)\b/.test(
+      text,
+    )
   );
 }
 
@@ -239,6 +265,20 @@ function pushAlternatingTimer(timers, kind, { currentRest, currentWork, restSeco
     return;
   }
   timers.push(makeTimer(currentRest?.label || "Rest", restSeconds, "rest"));
+}
+
+function extractTimerDslTimers(text) {
+  const source = String(text || "").trim();
+  const start = findTimerDslStartIndex(source);
+  if (start < 0) return [];
+
+  try {
+    return parseTimerDsl(source.slice(start), "timer DSL").timers.map((timer) =>
+      makeTimer(timer.label, timer.durationSeconds, timer.kind),
+    );
+  } catch (error) {
+    throw new Error(`Invalid timer DSL: ${error.message}`);
+  }
 }
 
 function replaceNumberWords(text) {
@@ -280,7 +320,7 @@ function replaceNumberWords(text) {
 
 function hasDurationAmountBefore(text, offset) {
   const before = text.slice(Math.max(0, offset - 24), offset).toLowerCase();
-  return /(?:\d+(?:\.\d+)?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|sixteen)\s+$/.test(
+  return /(?:\d+(?:\.\d+)?|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|fifteen|sixteen|twenty|thirty|forty|ninety)\s+$/.test(
     before,
   );
 }
@@ -290,7 +330,7 @@ function mentionsWorkAndRest(text) {
 }
 
 function mentionsAlternating(text) {
-  return /(alternating|alterating|alternate|alternations?|alterations?|blocks?|rounds?|cycles?|steps?|sets?|middle|middle ones)/.test(
+  return /\b(alternating|alterating|alternate|alternations?|alterations?|blocks?|rounds?|cycles?|steps?|sets?|middle|middle ones)\b/.test(
     text,
   );
 }
@@ -387,10 +427,10 @@ function extractCycles(text) {
   return genericAlternatingMatch ? clampInteger(genericAlternatingMatch[1], 1, MAX_INTERVALS / 2) : null;
 }
 
-function extractExplicitGenericTimers(text) {
+export function extractExplicitGenericTimers(text) {
   if (!/\b(?:timers?|intervals?)\b/.test(text)) return [];
   if (
-    mentionsAlternating(text) ||
+    mentionsGenericTimerConflict(text) ||
     mentionsRestLike(text) ||
     mentionsWorkLike(text) ||
     hasEndpointLabel(text)
@@ -398,22 +438,262 @@ function extractExplicitGenericTimers(text) {
     return [];
   }
 
-  const timers = [];
-  const countedDurationPattern = new RegExp(
-    `\\b(\\d+)\\s+${durationPattern()}\\s*(?:timers?|intervals?)?`,
+  const positionalTimers = extractPositionalGenericTimers(text);
+  if (positionalTimers.length) return positionalTimers;
+
+  return extractSequentialGenericTimers(text);
+}
+
+function extractPositionalGenericTimers(text) {
+  const separatedEndpointTimers = extractSeparatedEndpointGenericTimers(text);
+  if (separatedEndpointTimers.length) return separatedEndpointTimers;
+
+  const aroundTimers = extractAroundGenericTimers(text);
+  if (aroundTimers.length) return aroundTimers;
+
+  const betweenTwoTimers = extractBetweenTwoOuterGenericTimers(text);
+  if (betweenTwoTimers.length) return betweenTwoTimers;
+
+  const middleGroup = findCountedDurationGroup(text);
+  if (!middleGroup) return [];
+
+  const outerSeconds =
+    findFirstLastOuterDuration(text) ??
+    findLeadingFirstLastOuterDuration(text) ??
+    findStartFinishOuterDuration(text) ??
+    findOuterTimerDuration(text) ??
+    findRepeatedEndpointDuration(text) ??
+    findBookendOuterDuration(text) ??
+    findBeginFinishOuterDuration(text);
+  if (!outerSeconds) return [];
+
+  return expandGenericTimerGroups([
+    [1, outerSeconds],
+    [middleGroup.count, middleGroup.seconds],
+    [1, outerSeconds],
+  ]);
+}
+
+function extractSeparatedEndpointGenericTimers(text) {
+  const firstEndpoint = findEndpointDuration(
+    text,
+    new RegExp(
+      `\\b(?:first|1)\\s*(?:timers?\\s*)?(?:is\\s+|are\\s+|should\\s+be\\s+)?${durationPattern()}`,
+      "g",
+    ),
+  );
+  if (!firstEndpoint) return [];
+
+  const lastEndpoint = findEndpointDuration(
+    text,
+    new RegExp(
+      `\\b(?:last|final)\\s*(?:timers?\\s*)?(?:is\\s+|are\\s+|should\\s+be\\s+)?${durationPattern()}`,
+      "g",
+    ),
+    firstEndpoint.end,
+  );
+  if (!lastEndpoint || firstEndpoint.seconds !== lastEndpoint.seconds) return [];
+
+  const middleGroup = findCountedDurationGroup(blankRanges(text, [firstEndpoint, lastEndpoint]));
+  if (!middleGroup) return [];
+
+  return expandGenericTimerGroups([
+    [1, firstEndpoint.seconds],
+    [middleGroup.count, middleGroup.seconds],
+    [1, firstEndpoint.seconds],
+  ]);
+}
+
+function extractAroundGenericTimers(text) {
+  const match = new RegExp(
+    `\\b2\\s+${durationPattern()}\\s+timers?\\s+(?:around|with)\\s+(${numberTokenPattern()})\\s+(${numberTokenPattern()})\\s*(${DURATION_UNITS})\\s*(?:timers?|intervals?)?`,
+  ).exec(text);
+  if (!match) return [];
+
+  const outerSeconds = durationFromParts(Number(match[1]), match[2]);
+  const middleCount = parseNumberToken(match[3]);
+  const middleSeconds = durationFromParts(parseNumberToken(match[4]), match[5]);
+  if (!outerSeconds || !middleCount || !middleSeconds) return [];
+
+  return expandGenericTimerGroups([
+    [1, outerSeconds],
+    [middleCount, middleSeconds],
+    [1, outerSeconds],
+  ]);
+}
+
+function extractBetweenTwoOuterGenericTimers(text) {
+  const match = new RegExp(
+    `\\b(${numberTokenPattern()})\\s+(${numberTokenPattern()})\\s*(${DURATION_UNITS})\\s*(?:timers?|intervals?)?\\s+between\\s+2\\s+${durationPattern()}\\s+timers?`,
+  ).exec(text);
+  if (!match) return [];
+
+  const middleCount = parseNumberToken(match[1]);
+  const middleSeconds = durationFromParts(parseNumberToken(match[2]), match[3]);
+  const outerSeconds = durationFromParts(Number(match[4]), match[5]);
+  if (!outerSeconds || !middleCount || !middleSeconds) return [];
+
+  return expandGenericTimerGroups([
+    [1, outerSeconds],
+    [middleCount, middleSeconds],
+    [1, outerSeconds],
+  ]);
+}
+
+function extractSequentialGenericTimers(text) {
+  const groups = [];
+  const genericGroupPattern = new RegExp(
+    [
+      `\\b(?:(?<count>${numberTokenPattern()})\\s+(?<durationValue>${numberTokenPattern()})\\s*(?<durationUnit>${DURATION_UNITS})\\s*(?:timers?|intervals?)?`,
+      `|(?<singleValue>${numberTokenPattern()})\\s*(?<singleUnit>${DURATION_UNITS})\\s*(?:timers?|intervals?))\\b`,
+    ].join(""),
     "g",
   );
 
-  for (const match of text.matchAll(countedDurationPattern)) {
-    const count = clampInteger(match[1], 1, MAX_INTERVALS - timers.length);
-    const seconds = durationFromMatch([match[0], match[2], match[3]]);
-    if (!seconds) continue;
+  for (const match of text.matchAll(genericGroupPattern)) {
+    const captures = match.groups ?? {};
+    addGenericGroupMatch(
+      captures.count ? parseNumberToken(captures.count) : 1,
+      captures.durationValue ?? captures.singleValue,
+      captures.durationUnit ?? captures.singleUnit,
+      match.index,
+    );
+  }
+
+  const countThenDurationPatterns = [
+    new RegExp(
+      `\\b(${numberTokenPattern()})\\s+(?:standalone\\s+|plain\\s+|separate\\s+)?(?:timers?|intervals?)\\s*(?:,?\\s*(?:each|of|for))\\s+${durationPattern()}`,
+      "g",
+    ),
+    new RegExp(
+      `\\b(${numberTokenPattern()})\\s+(?:standalone\\s+|plain\\s+|separate\\s+)?(?:timers?|intervals?)\\s*,?\\s*${durationPattern()}\\s+each\\b`,
+      "g",
+    ),
+  ];
+  for (const pattern of countThenDurationPatterns) {
+    for (const match of text.matchAll(pattern)) {
+      addGenericGroupMatch(parseNumberToken(match[1]), match[2], match[3], match.index);
+    }
+  }
+
+  groups.sort((left, right) => left.index - right.index);
+  return expandGenericTimerGroups(groups.map((group) => [group.count, group.seconds]));
+
+  function addGenericGroupMatch(countValue, durationValueToken, durationUnit, index) {
+    const durationValue = parseNumberToken(durationValueToken);
+    if (!countValue || !durationValue) return;
+
+    const seconds = durationFromParts(durationValue, durationUnit);
+    if (!seconds) return;
+    groups.push({ index: Number.isFinite(index) ? index : Number.MAX_SAFE_INTEGER, count: countValue, seconds });
+  }
+}
+
+function findCountedDurationGroup(text) {
+  const pattern = new RegExp(
+    `\\b(${numberTokenPattern()})\\s+(${numberTokenPattern()})\\s*(${DURATION_UNITS})\\s*(?:timers?|intervals?)?`,
+    "g",
+  );
+  for (const match of text.matchAll(pattern)) {
+    const count = parseNumberToken(match[1]);
+    const durationValue = parseNumberToken(match[2]);
+    const seconds = durationFromParts(durationValue, match[3]);
+    if (count && seconds) return { count: clampInteger(count, 1, MAX_INTERVALS - 2), seconds };
+  }
+  return null;
+}
+
+function findEndpointDuration(text, pattern, startIndex = 0) {
+  pattern.lastIndex = startIndex;
+  let match;
+  while ((match = pattern.exec(text))) {
+    const seconds = durationFromMatch(match);
+    if (seconds) return { seconds, start: match.index, end: match.index + match[0].length };
+  }
+  return null;
+}
+
+function blankRanges(text, ranges) {
+  const chars = [...String(text || "")];
+  for (const range of ranges) {
+    for (let index = range.start; index < range.end && index < chars.length; index += 1) {
+      chars[index] = " ";
+    }
+  }
+  return chars.join("");
+}
+
+function findFirstLastOuterDuration(text) {
+  const match = new RegExp(
+    `\\b(?:first|1)\\s+and\\s+(?:last|final)\\s*(?:timers?)?\\s*(?:are|is|should\\s+be)?\\s*${durationPattern()}`,
+  ).exec(text);
+  return match ? durationFromMatch(match) : null;
+}
+
+function findLeadingFirstLastOuterDuration(text) {
+  const match = new RegExp(`${durationPattern()}\\s+(?:first|1)\\s+and\\s+(?:last|final)\\s+timers?`).exec(text);
+  return match ? durationFromMatch(match) : null;
+}
+
+function findStartFinishOuterDuration(text) {
+  const match = new RegExp(
+    `\\b(?:start|begin)\\s+and\\s+(?:end|finish)\\s+with\\s+${durationPattern()}\\s*(?:timers?|intervals?)?`,
+  ).exec(text);
+  return match ? durationFromMatch(match) : null;
+}
+
+function findOuterTimerDuration(text) {
+  const match = new RegExp(
+    `\\b(?:outer|outside)\\s+timers?\\s*(?:are|is|should\\s+be)?\\s*${durationPattern()}`,
+  ).exec(text);
+  return match ? durationFromMatch(match) : null;
+}
+
+function findRepeatedEndpointDuration(text) {
+  const match = new RegExp(
+    `\\b(?:first|1)\\s+timer\\s*${durationPattern()}.*?\\b(?:last|final)\\s+timer\\s*${durationPattern()}`,
+  ).exec(text);
+  if (!match) return null;
+
+  const firstSeconds = durationFromParts(Number(match[1]), match[2]);
+  const lastSeconds = durationFromParts(Number(match[3]), match[4]);
+  return firstSeconds === lastSeconds ? firstSeconds : null;
+}
+
+function findBookendOuterDuration(text) {
+  const bookendMatch = new RegExp(`\\bbookend\\b.*?\\bwith\\s+${durationPattern()}\\s*(?:timers?|intervals?)?`).exec(text);
+  if (bookendMatch) return durationFromMatch(bookendMatch);
+
+  const beginningEndMatch = new RegExp(`${durationPattern()}\\s+at\\s+(?:the\\s+)?(?:beginning|start)\\s+and\\s+(?:the\\s+)?end`).exec(text);
+  return beginningEndMatch ? durationFromMatch(beginningEndMatch) : null;
+}
+
+function findBeginFinishOuterDuration(text) {
+  const match = new RegExp(
+    `\\b(?:begin|start)\\s+with\\s+${durationPattern()}.*?\\b(?:finish|end)\\s+with\\s+${durationPattern()}`,
+  ).exec(text);
+  if (!match) return null;
+
+  const firstSeconds = durationFromParts(Number(match[1]), match[2]);
+  const lastSeconds = durationFromParts(Number(match[3]), match[4]);
+  return firstSeconds === lastSeconds ? firstSeconds : null;
+}
+
+function expandGenericTimerGroups(groups) {
+  const timers = [];
+  for (const [rawCount, seconds] of groups) {
+    const count = clampInteger(rawCount, 1, MAX_INTERVALS - timers.length);
     for (let index = 0; index < count && timers.length < MAX_INTERVALS; index += 1) {
       timers.push(makeTimer("Timer", seconds, "other"));
     }
   }
-
   return timers;
+}
+
+function mentionsGenericTimerConflict(text) {
+  return /\b(alternating|alterating|alternate|alternations?|alterations?|blocks?|rounds?|cycles?|steps?|sets?)\b/.test(
+    text,
+  );
 }
 
 function extractTotalIntervals(text) {
@@ -546,12 +826,27 @@ function firstUsefulDuration(text) {
 }
 
 function durationPattern() {
-  return "(\\d+(?:\\.\\d+)?)\\s*(hours?|hrs?|hr|h|minutes?|mins?|minu|mintues?|mintutes?|min|m|seconds?|secs?|sec|s)";
+  return `(\\d+(?:\\.\\d+)?)\\s*(${DURATION_UNITS})`;
+}
+
+function numberTokenPattern() {
+  const words = [...NUMBER_WORDS.keys()].sort((left, right) => right.length - left.length).map(escapeRegExp);
+  return `(?:\\d+(?:\\.\\d+)?|${words.join("|")})`;
+}
+
+function parseNumberToken(value) {
+  const normalized = String(value || "").toLowerCase().replace(/[-\s]+/g, " ").trim();
+  const numeric = Number(normalized);
+  if (Number.isFinite(numeric)) return numeric;
+  return NUMBER_WORDS.get(normalized) ?? null;
 }
 
 function durationFromMatch(match) {
-  const value = Number(match[1]);
-  const unit = match[2];
+  return durationFromParts(Number(match[1]), match[2]);
+}
+
+function durationFromParts(value, unitValue) {
+  const unit = String(unitValue || "").toLowerCase();
   if (!Number.isFinite(value)) return null;
   if (unit.startsWith("h")) return Math.round(value * 3600);
   if (unit.startsWith("m")) return Math.round(value * 60);

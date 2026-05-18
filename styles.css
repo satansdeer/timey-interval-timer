@@ -16,6 +16,8 @@
   --display: #000000;
   --display-text: #00ff66;
   --danger: #800000;
+  --assistant-reserve-bottom: 0px;
+  --timeline-row-height: 44px;
   --win-scrollbar-size: 17px;
   font-family: "MS Sans Serif", Tahoma, "Segoe UI", Arial, sans-serif;
 }
@@ -277,6 +279,79 @@ h2 {
   padding: 3px 7px 1px 9px;
 }
 
+.menu-item {
+  position: relative;
+}
+
+.menu-dropdown {
+  background: var(--face);
+  border: 2px solid;
+  border-color: var(--highlight) var(--dark-shadow) var(--dark-shadow) var(--highlight);
+  box-shadow: 1px 1px 0 var(--shadow);
+  left: 0;
+  min-width: 154px;
+  padding: 2px;
+  position: absolute;
+  top: 100%;
+  z-index: 30;
+}
+
+.menu-dropdown[hidden] {
+  display: none;
+}
+
+.menu-checkbox {
+  align-items: center;
+  display: flex;
+  gap: 7px;
+  min-height: 24px;
+  padding: 3px 18px 3px 5px;
+  white-space: nowrap;
+}
+
+.menu-checkbox:hover,
+.menu-checkbox:focus-within {
+  background: var(--title);
+  color: var(--highlight);
+}
+
+.menu-checkbox input {
+  appearance: none;
+  background: var(--field);
+  border: 2px solid;
+  border-color: var(--dark-shadow) var(--highlight) var(--highlight) var(--dark-shadow);
+  display: grid;
+  flex: 0 0 auto;
+  height: 13px;
+  margin: 0;
+  min-height: 13px;
+  padding: 0;
+  place-content: center;
+  width: 13px;
+}
+
+.menu-checkbox input::before {
+  border-bottom: 2px solid var(--window-text);
+  border-left: 2px solid var(--window-text);
+  content: "";
+  height: 4px;
+  transform: rotate(-45deg) scale(0);
+  width: 7px;
+}
+
+.menu-checkbox input:checked::before {
+  transform: rotate(-45deg) scale(1);
+}
+
+.menu-checkbox input:disabled {
+  background: var(--face-light);
+}
+
+.menu-checkbox input:disabled + span {
+  color: var(--disabled);
+  text-shadow: 1px 1px var(--highlight);
+}
+
 .window-client {
   display: grid;
   grid-template-rows: auto minmax(0, 1fr);
@@ -368,7 +443,7 @@ h2 {
 .timer-surface {
   display: grid;
   gap: 12px;
-  grid-template-rows: auto minmax(280px, auto) auto minmax(42px, 1fr);
+  grid-template-rows: auto minmax(280px, 1fr) auto var(--timeline-row-height);
   min-height: 520px;
 }
 
@@ -591,12 +666,23 @@ h2 {
   background: var(--field);
   border: 2px solid;
   border-color: var(--dark-shadow) var(--highlight) var(--highlight) var(--dark-shadow);
+  box-sizing: border-box;
+  cursor: pointer;
   display: flex;
   gap: 2px;
-  min-height: 34px;
+  height: var(--timeline-row-height);
+  max-height: var(--timeline-row-height);
+  min-height: var(--timeline-row-height);
   overflow: hidden;
   padding: 3px;
   position: relative;
+  touch-action: none;
+  user-select: none;
+}
+
+.timeline:focus-visible {
+  outline: 2px solid var(--text);
+  outline-offset: 2px;
 }
 
 .timeline-segment {
@@ -639,9 +725,10 @@ h2 {
   border-left: 1px solid var(--highlight);
   border-right: 1px solid var(--dark-shadow);
   bottom: 1px;
+  box-sizing: border-box;
   position: absolute;
   top: 1px;
-  transform: translateX(-1px);
+  transform: translateX(-50%);
   width: 3px;
   z-index: 5;
 }
@@ -1102,6 +1189,10 @@ h2 {
   .window-client,
   .tab-frame {
     padding: 6px;
+  }
+
+  .window-client {
+    padding-bottom: calc(6px + var(--assistant-reserve-bottom));
   }
 
   .tab-button,

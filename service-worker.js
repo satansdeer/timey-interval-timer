@@ -1,5 +1,6 @@
 const APP_CACHE_PREFIX = "timey-app-";
-const CACHE_NAME = `${APP_CACHE_PREFIX}v34`;
+const CACHE_NAME = `${APP_CACHE_PREFIX}v42`;
+const MODEL_CACHE_NAME = "timey-model-t5-efficient-tiny-q8enc-q4dec-v1";
 const LEGACY_APP_CACHE_PATTERN = /^timey-v\d+$/;
 const ASSETS = [
   "./",
@@ -8,6 +9,7 @@ const ASSETS = [
   "./styles.css",
   "./main.js",
   "./assistant-session.js",
+  "./timer-dsl.js",
   "./fallback-planner.js",
   "./llm-planner.js",
   "./planner.js",
@@ -40,6 +42,10 @@ self.addEventListener("fetch", (event) => {
   if (event.request.method !== "GET") return;
   const url = new URL(event.request.url);
   if (url.origin !== self.location.origin) return;
+  if (url.pathname.startsWith("/models/")) {
+    event.respondWith(cacheFirstModel(event.request));
+    return;
+  }
   event.respondWith(networkFirst(event.request));
 });
 
@@ -62,4 +68,16 @@ async function networkFirst(request) {
     if (request.mode === "navigate") return cache.match("./index.html");
     return Response.error();
   }
+}
+
+async function cacheFirstModel(request) {
+  const cache = await caches.open(MODEL_CACHE_NAME);
+  const cached = await cache.match(request);
+  if (cached) return cached;
+
+  const response = await fetch(request);
+  if (response.ok) {
+    await cache.put(request, response.clone());
+  }
+  return response;
 }

@@ -62,7 +62,7 @@ function getFallbackResult(text, currentTimers, conversation) {
 
 function isNoLlmFallbackError(error) {
   const message = String(error?.message || error || "");
-  return /WebGPU unavailable|Tiny LLM not loaded|Tiny LLM unavailable|Could not load|Failed to fetch|NetworkError/i.test(
+  return /WebGPU unavailable|WebAssembly unavailable|Tiny LLM not loaded|Tiny timer model not loaded|Tiny LLM unavailable|Tiny seq2seq planner does not handle correction requests|Could not load|Failed to fetch|NetworkError/i.test(
     message,
   );
 }

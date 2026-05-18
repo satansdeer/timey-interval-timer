@@ -1,169 +1,133 @@
-import { MAX_INTERVALS, isCorrection, normalizePrompt } from "./fallback-planner.js";
+import { MAX_INTERVALS, extractExplicitGenericTimers, isCorrection, normalizePrompt } from "./fallback-planner.js";
+import { findTimerDslStartIndex, isCompleteTimerDsl, isTimerDslPrefix, parseTimerDsl } from "./timer-dsl.js";
 
-export const WEBLLM_PACKAGE_VERSION = "0.2.83";
-export const PREFERRED_MODEL_ID = "Qwen2-0.5B-Instruct-q4f16_1-MLC";
-export const FALLBACK_MODEL_ID = "Llama-3.2-1B-Instruct-q4f16_1-MLC";
-export const WEBLLM_CDN_URL = `https://esm.run/@mlc-ai/web-llm@${WEBLLM_PACKAGE_VERSION}`;
-const MODEL_CANDIDATES = [
-  PREFERRED_MODEL_ID,
-  FALLBACK_MODEL_ID,
-];
-
-const timerSchema = {
-  type: "object",
-  additionalProperties: false,
-  required: ["timers"],
-  properties: {
-    timers: {
-      type: "array",
-      minItems: 1,
-      maxItems: MAX_INTERVALS,
-      items: {
-        type: "object",
-        additionalProperties: false,
-        required: ["label", "durationSeconds", "kind"],
-        properties: {
-          label: { type: "string", minLength: 1, maxLength: 48 },
-          durationSeconds: { type: "integer", minimum: 1, maximum: 86400 },
-          kind: { enum: ["warmup", "work", "rest", "cooldown", "other"] },
-        },
-      },
-    },
-  },
+export const TRANSFORMERS_PACKAGE_VERSION = "4.2.0";
+export const TRAINED_TINY_MODEL_ID = "timey-t5-efficient-tiny";
+export const TRAINED_TINY_MODEL_VERSION = "t5-efficient-tiny-positional-generic-lr1e-5-checkpoint-250-q8enc-q4dec-ort-beam";
+export const TRAINED_TINY_MODEL_DTYPE = "q8-encoder-q4-decoder-opset21";
+export const TRAINED_TINY_MODEL_DEVICE = "wasm";
+export const TRANSFORMERS_CDN_URL = `https://cdn.jsdelivr.net/npm/@huggingface/transformers@${TRANSFORMERS_PACKAGE_VERSION}`;
+export const ONNXRUNTIME_WEB_VERSION = "1.26.0-dev.20260416-b7804b056c";
+export const ONNXRUNTIME_WASM_CDN_URL = `https://cdn.jsdelivr.net/npm/onnxruntime-web@${ONNXRUNTIME_WEB_VERSION}/dist/`;
+export const ONNXRUNTIME_WASM_ESM_URL = `${ONNXRUNTIME_WASM_CDN_URL}ort.wasm.min.mjs`;
+export const ONNXRUNTIME_WASM_PATHS = {
+  mjs: `${ONNXRUNTIME_WASM_CDN_URL}ort-wasm-simd-threaded.mjs`,
+  wasm: `${ONNXRUNTIME_WASM_CDN_URL}ort-wasm-simd-threaded.wasm`,
 };
+export const TINY_TIMER_ENCODER_URL = `/models/${TRAINED_TINY_MODEL_ID}/onnx/encoder_model_quantized.onnx`;
+export const TINY_TIMER_DECODER_URL = `/models/${TRAINED_TINY_MODEL_ID}/onnx/decoder_model_quantized.onnx`;
+export const TINY_TIMER_INPUT_PREFIX = "translate timer request to Timey DSL: ";
+export const TINY_TIMER_MAX_INPUT_TOKENS = 160;
+export const TINY_TIMER_MAX_NEW_TOKENS = 64;
+export const TINY_TIMER_NUM_BEAMS = 4;
+export const TINY_TIMER_TOPK_PER_BEAM = 8;
 
-let webllmModulePromise = null;
-let enginePromise = null;
+let transformersModulePromise = null;
+let onnxRuntimeModulePromise = null;
+let generatorPromise = null;
 let selectedModelId = null;
 
 export function canUseTinyLlm() {
-  return Boolean(globalThis.navigator?.gpu);
+  return typeof globalThis.WebAssembly === "object";
 }
 
 export function getTinyLlmStatus() {
-  if (!canUseTinyLlm()) return "WebGPU unavailable";
-  if (selectedModelId && enginePromise) return selectedModelId;
-  return "Tiny LLM ready";
+  if (!canUseTinyLlm()) return "WebAssembly unavailable";
+  if (selectedModelId && generatorPromise) return selectedModelId;
+  return "Tiny timer model ready";
 }
 
 export function isTinyLlmLoaded() {
-  return Boolean(enginePromise && selectedModelId);
+  return Boolean(generatorPromise && selectedModelId);
 }
 
-export function getTinyLlmAssetKey(modelId = selectedModelId || PREFERRED_MODEL_ID) {
-  return `${WEBLLM_PACKAGE_VERSION}:${modelId}`;
+export function getTinyLlmAssetKey(modelId = selectedModelId || TRAINED_TINY_MODEL_ID) {
+  return `${TRANSFORMERS_PACKAGE_VERSION}:${TRAINED_TINY_MODEL_VERSION}:${modelId}`;
 }
 
 export async function preloadTinyLlm(onStatus) {
-  await getEngine(onStatus);
+  await getGenerator(onStatus);
   return selectedModelId;
 }
 
-export async function planWithTinyLlm({
-  text,
-  currentTimers,
-  currentWorkoutShape,
-  conversation,
-  onStatus,
-}) {
+export async function planWithTinyLlm({ text, onStatus }) {
+  const directDsl = parseDirectTimerDslInput(text);
+  if (directDsl) {
+    return {
+      timers: directDsl.timers,
+      model: selectedModelId || TRAINED_TINY_MODEL_ID,
+      rawContent: directDsl.rawContent,
+      source: "tiny-llm",
+    };
+  }
+
   if (!canUseTinyLlm()) {
-    throw new Error("WebGPU unavailable");
+    throw new Error("WebAssembly unavailable");
   }
   if (!isTinyLlmLoaded()) {
-    throw new Error("Tiny LLM not loaded");
+    throw new Error("Tiny timer model not loaded");
+  }
+  if (isCorrection(normalizePrompt(text))) {
+    throw new Error("Tiny seq2seq planner does not handle correction requests");
   }
 
-  const engine = await getEngine(onStatus);
-  const messages = buildTinyLlmMessages({
-    text,
-    currentTimers,
-    currentWorkoutShape,
-    conversation,
-  });
+  const runtime = await getGenerator(onStatus);
+  const input = buildTinyLlmInput(text);
+  const content = await runtime.generate(input, onStatus);
+  if (!content) throw new Error("Tiny timer model returned an empty response");
 
-  const completion = await engine.chat.completions.create({
-    messages,
-    temperature: 0,
-    max_tokens: 2400,
-    response_format: {
-      type: "json_object",
-      schema: JSON.stringify(timerSchema),
-    },
-  });
-  const content = completion.choices?.[0]?.message?.content;
-  if (!content) throw new Error("Tiny LLM returned an empty response");
-
-  const parsed = JSON.parse(content);
-  if (!Array.isArray(parsed.timers) || !parsed.timers.length) {
-    throw new Error("Tiny LLM returned no timers");
-  }
-
+  const parsed = parseTimerDsl(content, "tiny timer model output");
+  const timers = repairGenericTimerList(text, parsed.timers);
   return {
-    timers: validateLlmTimers(parsed.timers),
+    timers: validateLlmTimers(timers),
     model: selectedModelId,
+    rawContent: content,
     source: "tiny-llm",
   };
 }
 
-export function buildTinyLlmMessages({
-  text,
-  currentTimers = [],
-  currentWorkoutShape = null,
-  conversation = [],
-}) {
-  const correctionRequest = isCorrection(normalizePrompt(text));
-  const payload = {
-    schema: timerSchema,
-    correctionRequest,
-    userRequest: text,
+export function parseDirectTimerDslInput(text) {
+  const source = String(text || "");
+  const start = findTimerDslStartIndex(source);
+  if (start < 0) return null;
+
+  const rawContent = source.slice(start);
+  const parsed = parseTimerDsl(rawContent, "direct timer DSL input");
+  return {
+    timers: validateLlmTimers(parsed.timers),
+    rawContent,
   };
+}
 
-  if (correctionRequest) {
-    payload.conversation = conversation.slice(-8);
-    payload.currentWorkoutShape = currentWorkoutShape;
-    payload.currentTimers = currentTimers.map(({ label, seconds, kind }) => ({
-      label,
-      durationSeconds: seconds,
-      kind,
-    }));
-  }
+export function repairGenericTimerList(text, modelTimers) {
+  const genericTimers = extractExplicitGenericTimers(normalizePrompt(text));
+  if (!genericTimers.length) return modelTimers;
+  if (modelTimers.some((timer) => timer.kind !== "other")) return modelTimers;
 
-  return [
-    {
-      role: "system",
-      content: [
-        "You convert natural-language workout timer requests into strict JSON.",
-        "Return only JSON matching this shape: {\"timers\":[{\"label\":\"Warmup\",\"durationSeconds\":480,\"kind\":\"warmup\"}]}",
-        "For new requests, build timers only from userRequest. Do not copy prior or default timers.",
-        "Use currentWorkoutShape and currentTimers only when correctionRequest is true.",
-        "Use currentWorkoutShape as the compact source of truth for correction requests.",
-        "If the user corrects the middle blocks, preserve warmup/cooldown and the previous alternating block count/order unless explicitly changed.",
-        "Do not collapse an existing workout to a single interval unless the user explicitly asks for one interval.",
-        "Treat 'warmdown' as cooldown. Treat 'alternating cycles/blocks/rounds' as repeated work/rest or rest/work pairs.",
-        "Treat 'alternations' and common typos like 'alterations' as repeated work/rest or rest/work pairs. Treat low intensity/easy as rest.",
-        "Treat steps, intervals, and timers as individual intervals, not pairs. Exactly 6 steps in the middle means 6 middle intervals total.",
-        "For a new standalone timer list, create exactly the requested timers as kind other; do not copy currentTimers. Example: '5 one minute timers and one 30 second' means five 60-second timers plus one 30-second timer.",
-        "If the user says N alternating blocks of 1 minute rest and 1 minute work, create N rest intervals and N work intervals between warmup and cooldown.",
-        "Duration wording near cycles, blocks, or 'each' usually applies to every middle interval, not to the number of cycles.",
-        "durationSeconds is always elapsed seconds: 8 minutes is 480, 1 minute is 60, 30 seconds is 30. Never use 8 for an 8-minute timer or 4 for four one-minute intervals.",
-        "Example: '8 minute warmup, 8 minutes cooldown. 4 one minute intervals work/rest in the middle (1 minute each)' means Warmup 480, Work 60, Rest 60, Work 60, Rest 60, Cooldown 480.",
-      ].join(" "),
-    },
-    {
-      role: "user",
-      content: JSON.stringify(payload),
-    },
-  ];
+  const modelDurations = modelTimers.map((timer) => Number(timer.durationSeconds ?? timer.seconds));
+  const genericDurations = genericTimers.map((timer) => Number(timer.durationSeconds ?? timer.seconds));
+  const sameDurations =
+    modelDurations.length === genericDurations.length &&
+    modelDurations.every((seconds, index) => seconds === genericDurations[index]);
+  return sameDurations ? modelTimers : genericTimers;
+}
+
+export function buildTinyLlmInput(text) {
+  return `${TINY_TIMER_INPUT_PREFIX}${String(text || "").trim()}`;
 }
 
 export function validateLlmTimers(timers) {
+  if (!Array.isArray(timers) || !timers.length) {
+    throw new Error("Tiny timer model returned no timers");
+  }
+
   return timers.slice(0, MAX_INTERVALS).map((timer) => {
     const seconds = Number(timer.durationSeconds ?? timer.seconds);
     if (!Number.isFinite(seconds) || seconds <= 0 || seconds > 86400) {
-      throw new Error("Tiny LLM returned an invalid duration");
+      throw new Error("Tiny timer model returned an invalid duration");
     }
     if (!["warmup", "work", "rest", "cooldown", "other"].includes(timer.kind)) {
-      throw new Error("Tiny LLM returned an invalid interval kind");
+      throw new Error("Tiny timer model returned an invalid interval kind");
     }
     return {
       label: String(timer.label || "Interval").slice(0, 48),
@@ -173,34 +137,250 @@ export function validateLlmTimers(timers) {
   });
 }
 
-async function getEngine(onStatus) {
-  if (enginePromise) return enginePromise;
-  enginePromise = createEngine(onStatus);
-  return enginePromise;
+async function getGenerator(onStatus) {
+  if (generatorPromise) return generatorPromise;
+  generatorPromise = createGenerator(onStatus).catch((error) => {
+    generatorPromise = null;
+    selectedModelId = null;
+    throw error;
+  });
+  return generatorPromise;
 }
 
-async function createEngine(onStatus) {
-  onStatus?.("Loading tiny LLM", 0);
-  const webllm = await getWebLlmModule();
-  selectedModelId = selectModelId(webllm);
-  onStatus?.(`Loading ${selectedModelId}`, 0);
-  return webllm.CreateMLCEngine(selectedModelId, {
-    initProgressCallback: (progress) => {
-      const text = progress?.text || progress?.progress ? String(progress.text || "") : "";
-      const value = Number(progress?.progress);
-      if (text || Number.isFinite(value)) onStatus?.(text || "Loading tiny LLM", value);
+async function createGenerator(onStatus) {
+  onStatus?.("Loading tiny timer model", 0);
+  const { AutoTokenizer, env } = await getTransformersModule();
+
+  env.allowLocalModels = true;
+  env.allowRemoteModels = false;
+  env.localModelPath = "/models/";
+
+  onStatus?.("Loading tiny timer tokenizer", 0.05);
+  const tokenizer = await AutoTokenizer.from_pretrained(TRAINED_TINY_MODEL_ID, {
+    progress_callback: (progress) => {
+      onStatus?.(formatProgressStatus(progress), normalizeProgress(progress) * 0.2);
     },
   });
+
+  onStatus?.("Loading tiny timer runtime", 0.25);
+  const ort = await getOnnxRuntimeModule();
+  configureOnnxRuntimeWeb(ort.env);
+
+  const sessionOptions = {
+    executionProviders: [TRAINED_TINY_MODEL_DEVICE],
+    graphOptimizationLevel: "all",
+  };
+  onStatus?.("Loading tiny timer encoder", 0.35);
+  const encoder = await ort.InferenceSession.create(TINY_TIMER_ENCODER_URL, sessionOptions);
+  onStatus?.("Loading tiny timer decoder", 0.65);
+  const decoder = await ort.InferenceSession.create(TINY_TIMER_DECODER_URL, sessionOptions);
+
+  selectedModelId = TRAINED_TINY_MODEL_ID;
+  onStatus?.(`Loaded ${TRAINED_TINY_MODEL_ID}`, 1);
+  return {
+    generate: (input, statusCallback) =>
+      generateWithOrt({
+        input,
+        tokenizer,
+        ort,
+        encoder,
+        decoder,
+        onStatus: statusCallback,
+      }),
+  };
 }
 
-async function getWebLlmModule() {
-  webllmModulePromise ??= import(WEBLLM_CDN_URL);
-  return webllmModulePromise;
+function configureOnnxRuntimeWeb(env) {
+  const wasm = env?.wasm;
+  if (!wasm) return;
+
+  wasm.numThreads = 1;
+  wasm.proxy = false;
+  wasm.wasmPaths = ONNXRUNTIME_WASM_PATHS;
 }
 
-export function selectModelId(webllm) {
-  const modelIds = new Set(
-    webllm.prebuiltAppConfig?.model_list?.map((model) => model.model_id) || [],
-  );
-  return MODEL_CANDIDATES.find((modelId) => modelIds.has(modelId)) ?? FALLBACK_MODEL_ID;
+async function getTransformersModule() {
+  transformersModulePromise ??= import(TRANSFORMERS_CDN_URL);
+  return transformersModulePromise;
+}
+
+async function getOnnxRuntimeModule() {
+  onnxRuntimeModulePromise ??= import(ONNXRUNTIME_WASM_ESM_URL);
+  return onnxRuntimeModulePromise;
+}
+
+async function generateWithOrt({ input, tokenizer, ort, encoder, decoder, onStatus }) {
+  onStatus?.("Encoding timer request", 0.72);
+  const encoded = await tokenizer(input, {
+    truncation: true,
+    max_length: TINY_TIMER_MAX_INPUT_TOKENS,
+  });
+  const inputIds = encoded.input_ids;
+  const attentionMask = encoded.attention_mask;
+  const inputDims = inputIds.dims || [1, tensorData(inputIds).length];
+  const attentionDims = attentionMask.dims || inputDims;
+  const inputTensor = new ort.Tensor("int64", toBigInt64Array(tensorData(inputIds)), inputDims);
+  const attentionTensor = new ort.Tensor("int64", toBigInt64Array(tensorData(attentionMask)), attentionDims);
+
+  onStatus?.("Running timer encoder", 0.76);
+  const encoderOutputs = await encoder.run({
+    input_ids: inputTensor,
+    attention_mask: attentionTensor,
+  });
+  const encoderHiddenStates = encoderOutputs.last_hidden_state || Object.values(encoderOutputs)[0];
+  if (!encoderHiddenStates) throw new Error("Tiny timer model returned no encoder state");
+
+  const outputIds = await generateBeamSearch({
+    tokenizer,
+    ort,
+    decoder,
+    attentionTensor,
+    encoderHiddenStates,
+    onStatus,
+  });
+
+  onStatus?.("Parsing timer plan", 0.99);
+  return String(tokenizer.decode(outputIds, { skip_special_tokens: true })).trim();
+}
+
+async function generateBeamSearch({ tokenizer, ort, decoder, attentionTensor, encoderHiddenStates, onStatus }) {
+  let beams = [
+    {
+      ids: [0n],
+      outputIds: [],
+      score: 0,
+      done: false,
+      constraintFallback: false,
+    },
+  ];
+
+  for (let step = 0; step < TINY_TIMER_MAX_NEW_TOKENS; step += 1) {
+    if (step === 0 || step % 8 === 0) {
+      onStatus?.("Generating timer plan", 0.8 + Math.min(0.18, step / TINY_TIMER_MAX_NEW_TOKENS * 0.18));
+    }
+
+    const candidates = [];
+    for (const beam of beams) {
+      if (beam.done) {
+        candidates.push(beam);
+        continue;
+      }
+
+      const decoderInput = new ort.Tensor("int64", BigInt64Array.from(beam.ids), [1, beam.ids.length]);
+      const decoderOutputs = await decoder.run({
+        encoder_attention_mask: attentionTensor,
+        input_ids: decoderInput,
+        encoder_hidden_states: encoderHiddenStates,
+      });
+      const logits = decoderOutputs.logits;
+      if (!logits) throw new Error("Tiny timer model returned no decoder logits");
+
+      const beamCandidates = [];
+      const fallbackCandidates = [];
+      for (const next of selectTopTokenLogProbs(logits.data, logits.dims, TINY_TIMER_TOPK_PER_BEAM)) {
+        const done = next.token === 1;
+        const outputIds = done ? beam.outputIds : [...beam.outputIds, next.token];
+        const candidate = {
+          ids: done ? beam.ids : [...beam.ids, BigInt(next.token)],
+          outputIds,
+          score: beam.score + next.logProb,
+          done,
+          constraintFallback: beam.constraintFallback,
+        };
+        const decoded = decodeTimerDslCandidate(tokenizer, outputIds);
+        if (isAllowedTimerDslCandidate(decoded, done, outputIds)) {
+          beamCandidates.push(candidate);
+        } else {
+          fallbackCandidates.push({ ...candidate, constraintFallback: true });
+        }
+      }
+      if (beamCandidates.length) {
+        candidates.push(...beamCandidates);
+      } else {
+        const fallback = fallbackCandidates.find((candidate) => !candidate.done) ?? fallbackCandidates[0];
+        if (fallback) candidates.push(fallback);
+      }
+    }
+
+    beams = candidates
+      .sort((left, right) => rankBeam(right) - rankBeam(left))
+      .slice(0, TINY_TIMER_NUM_BEAMS);
+
+    if (beams.every((beam) => beam.done)) break;
+  }
+
+  return beams.sort((left, right) => rankBeam(right) - rankBeam(left))[0]?.outputIds || [];
+}
+
+function decodeTimerDslCandidate(tokenizer, outputIds) {
+  return String(tokenizer.decode(outputIds, { skip_special_tokens: true })).trim();
+}
+
+function isAllowedTimerDslCandidate(decoded, done, outputIds) {
+  if (done) return Boolean(decoded) && isCompleteTimerDsl(decoded);
+  if (!decoded && outputIds.length) return false;
+  return isTimerDslPrefix(decoded);
+}
+
+function tensorData(tensor) {
+  return tensor?.data || tensor;
+}
+
+function toBigInt64Array(data) {
+  if (data instanceof BigInt64Array) return data;
+  return BigInt64Array.from(Array.from(data, (value) => BigInt(value)));
+}
+
+export function selectGreedyToken(logitsData, logitsDims) {
+  return selectTopTokenLogProbs(logitsData, logitsDims, 1)[0]?.token ?? 0;
+}
+
+function selectTopTokenLogProbs(logitsData, logitsDims, topK) {
+  const vocabSize = logitsDims.at(-1);
+  const sequenceLength = logitsDims.at(-2);
+  const offset = (sequenceLength - 1) * vocabSize;
+
+  let maxLogit = -Infinity;
+  for (let token = 0; token < vocabSize; token += 1) {
+    const value = logitsData[offset + token];
+    if (value > maxLogit) maxLogit = value;
+  }
+
+  let expSum = 0;
+  const top = [];
+  for (let token = 0; token < vocabSize; token += 1) {
+    const value = logitsData[offset + token];
+    expSum += Math.exp(value - maxLogit);
+    if (top.length < topK || value > top.at(-1).logit) {
+      top.push({ token, logit: value });
+      top.sort((left, right) => right.logit - left.logit);
+      if (top.length > topK) top.pop();
+    }
+  }
+  const logDenominator = maxLogit + Math.log(expSum);
+  return top.map((entry) => ({
+    token: entry.token,
+    logProb: entry.logit - logDenominator,
+  }));
+}
+
+function rankBeam(beam) {
+  const length = Math.max(1, beam.outputIds.length);
+  return beam.score / length;
+}
+
+function normalizeProgress(progress) {
+  const value = Number(progress?.progress);
+  if (!Number.isFinite(value)) return 0;
+  return value > 1 ? Math.min(1, value / 100) : Math.max(0, Math.min(1, value));
+}
+
+function formatProgressStatus(progress) {
+  if (typeof progress?.file === "string" && progress.file) {
+    return `Loading ${progress.file}`;
+  }
+  if (typeof progress?.status === "string" && progress.status) {
+    return progress.status;
+  }
+  return "Loading tiny timer model";
 }

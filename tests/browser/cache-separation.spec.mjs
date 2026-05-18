@@ -17,8 +17,8 @@ test("ui service worker upgrades do not delete or redownload the model cache", a
   const testId = `${Date.now()}-${Math.random().toString(16).slice(2)}`;
   const appCacheV1 = `browser-${testId}-ui-v1`;
   const appCacheV2 = `browser-${testId}-ui-v2`;
-  const modelCacheName = `webllm-model-cache-${testId}`;
-  const modelAssetUrl = `${server.origin}/__webllm__/Qwen2-0.5B-Instruct-q4f16_1-MLC/params.bin`;
+  const modelCacheName = `timey-model-cache-${testId}`;
+  const modelAssetUrl = `${server.origin}/models/timey-t5-efficient-tiny/onnx/encoder_model.onnx`;
   const modelBody = `cached-model-${testId}`;
 
   try {
@@ -92,6 +92,7 @@ async function writeStaticApp(root, { serviceWorkerVersion, pageText }) {
     writeFile(join(root, "styles.css"), "body { font-family: system-ui, sans-serif; }\n"),
     writeFile(join(root, "main.js"), "console.log('timey cache test app');\n"),
     writeFile(join(root, "assistant-session.js"), "export const cacheTest = true;\n"),
+    writeFile(join(root, "timer-dsl.js"), "export const cacheTest = true;\n"),
     writeFile(join(root, "fallback-planner.js"), "export const cacheTest = true;\n"),
     writeFile(join(root, "llm-planner.js"), "export const cacheTest = true;\n"),
     writeFile(join(root, "planner.js"), "export const cacheTest = true;\n"),
@@ -199,7 +200,7 @@ async function cleanupBrowserState(page) {
     const keys = await caches.keys();
     await Promise.all(
       keys
-        .filter((key) => key.startsWith("timey-app-") || key.startsWith("webllm-model-cache-"))
+        .filter((key) => key.startsWith("timey-app-") || key.startsWith("timey-model"))
         .map((key) => caches.delete(key)),
     );
   });

@@ -36,7 +36,6 @@ import {
 const LEGACY_STORAGE_KEY = "interval-studio-state-v1";
 const LEGACY_MODEL_CHOICE_KEY = "interval-studio-model-choice-v1";
 const STORAGE_KEY = "timey-state-v1";
-const MODEL_CHOICE_KEY = "timey-model-choice-v1";
 const MODEL_ASSET_KEY = "timey-model-asset-key-v1";
 
 const elements = {
@@ -72,14 +71,6 @@ const elements = {
   assistantInput: document.querySelector("#assistantInput"),
   copyConversationButton: document.querySelector("#copyConversationButton"),
   assistantSubmit: document.querySelector("#assistantSubmit"),
-  modelModal: document.querySelector("#modelModal"),
-  modelModalTitle: document.querySelector("#modelModalTitle"),
-  modelModalText: document.querySelector("#modelModalText"),
-  modelLoadPanel: document.querySelector("#modelLoadPanel"),
-  modelModalStatus: document.querySelector("#modelModalStatus"),
-  modelProgressFill: document.querySelector("#modelProgressFill"),
-  loadModelButton: document.querySelector("#loadModelButton"),
-  useFallbackButton: document.querySelector("#useFallbackButton"),
   tabButtons: Array.from(document.querySelectorAll("[data-tab-target]")),
   tabPanels: Array.from(document.querySelectorAll("[data-tab-panel]")),
 };
@@ -94,9 +85,11 @@ let deferredInstallPrompt = null;
 let lastRenderedSegmentIndex = null;
 let audioContext = null;
 let tinyLlmEnabled = false;
-let modelLoadStarted = false;
+let modelLoadPromise = null;
 let assistantIsThinking = false;
 let assistantBubbleText = INITIAL_ASSISTANT_BUBBLE_TEXT;
+let activeTimelinePointerId = null;
+let activeTimelineTouchId = null;
 
 init();
 
@@ -104,9 +97,10 @@ function init() {
   bindEvents();
   registerServiceWorker();
   detectAssistantMode();
-  maybeOfferTinyLlm();
+  Promise.resolve(startTinyLlmLoad()).catch(() => {});
   if (initialShareStatus) persist();
   renderAll();
+  syncAssistantLayoutReserve();
   window.setInterval(renderPlayer, 250);
 }
 
@@ -200,6 +194,16 @@ function bindEvents() {
   elements.stopButton.addEventListener("click", stopTimer);
   elements.previousButton.addEventListener("click", previousInterval);
   elements.nextButton.addEventListener("click", nextInterval);
+  elements.timeline.addEventListener("pointerdown", handleTimelinePointerDown);
+  elements.timeline.addEventListener("lostpointercapture", handleTimelineLostPointerCapture);
+  elements.timeline.addEventListener("touchstart", handleTimelineTouchStart, { passive: false });
+  document.addEventListener("pointermove", handleTimelinePointerMove);
+  document.addEventListener("pointerup", handleTimelinePointerUp);
+  document.addEventListener("pointercancel", handleTimelinePointerCancel);
+  document.addEventListener("touchmove", handleTimelineTouchMove, { passive: false });
+  document.addEventListener("touchend", handleTimelineTouchEnd, { passive: false });
+  document.addEventListener("touchcancel", handleTimelineTouchCancel, { passive: false });
+  elements.timeline.addEventListener("keydown", handleTimelineKeydown);
   elements.addIntervalButton.addEventListener("click", addInterval);
   elements.shareWorkoutButton.addEventListener("click", handleShareWorkout);
   elements.resetDataButton.addEventListener("click", resetData);
@@ -215,20 +219,18 @@ function bindEvents() {
   elements.assistantInput.addEventListener("input", resizeAssistantInput);
   elements.assistantInput.addEventListener("keydown", handleAssistantKeydown);
   elements.copyConversationButton.addEventListener("click", handleCopyConversation);
-  elements.loadModelButton.addEventListener("click", handleLoadModelClick);
-  elements.useFallbackButton.addEventListener("click", handleUseFallbackClick);
   elements.tabButtons.forEach((button) => {
     button.addEventListener("click", () => activateTab(button.dataset.tabTarget));
     button.addEventListener("keydown", handleTabKeydown);
   });
 
   document.addEventListener("keydown", handleGlobalKeydown);
-
   document.addEventListener("visibilitychange", () => {
     renderPlayer();
     persist();
   });
 
+  window.addEventListener("resize", syncAssistantLayoutReserve);
   window.addEventListener("beforeunload", persist);
 
   window.addEventListener("beforeinstallprompt", (event) => {
@@ -327,17 +329,175 @@ function seekToSegment(index) {
   const elapsedBefore = state.timers
     .slice(0, index)
     .reduce((total, timer) => total + timer.seconds * 1000, 0);
+  seekToElapsedMs(elapsedBefore);
+}
 
-  if (state.player.status === "running") {
-    state.player.elapsedBeforeStartMs = elapsedBefore;
-    state.player.startedAtMs = Date.now();
-  } else {
-    state.player.elapsedBeforeStartMs = elapsedBefore;
+function seekToElapsedMs(elapsedMs) {
+  const totalMs = getTotalMs();
+  const targetElapsedMs = clampNumber(elapsedMs, 0, totalMs);
+  const shouldFinish = totalMs > 0 && targetElapsedMs >= totalMs;
+
+  state.player.elapsedBeforeStartMs = targetElapsedMs;
+  state.player.startedAtMs =
+    state.player.status === "running" && !shouldFinish ? Date.now() : null;
+
+  if (shouldFinish) {
+    state.player.status = "finished";
+  } else if (state.player.status === "finished") {
+    state.player.status = "paused";
   }
 
-  lastRenderedSegmentIndex = index;
+  lastRenderedSegmentIndex = getSegmentAt(targetElapsedMs).index;
   markDirty();
   renderAll();
+}
+
+function handleTimelinePointerDown(event) {
+  if (!event.isPrimary || (event.pointerType === "mouse" && event.button !== 0)) return;
+  activeTimelinePointerId = event.pointerId;
+  event.currentTarget.setPointerCapture?.(event.pointerId);
+  event.preventDefault();
+  seekToTimelinePoint(event.clientX);
+}
+
+function handleTimelinePointerMove(event) {
+  if (event.pointerId !== activeTimelinePointerId) return;
+  event.preventDefault();
+  seekToTimelinePoint(event.clientX);
+}
+
+function handleTimelinePointerUp(event) {
+  if (event.pointerId !== activeTimelinePointerId) return;
+  event.preventDefault();
+  seekToTimelinePoint(event.clientX);
+  endTimelinePointerDrag(elements.timeline, event.pointerId);
+}
+
+function handleTimelinePointerCancel(event) {
+  if (event.pointerId !== activeTimelinePointerId) return;
+  endTimelinePointerDrag(elements.timeline, event.pointerId);
+}
+
+function handleTimelineLostPointerCapture(event) {
+  if (event.pointerId === activeTimelinePointerId) activeTimelinePointerId = null;
+}
+
+function endTimelinePointerDrag(target, pointerId) {
+  if (target.hasPointerCapture?.(pointerId)) target.releasePointerCapture(pointerId);
+  activeTimelinePointerId = null;
+}
+
+function handleTimelineTouchStart(event) {
+  if (activeTimelineTouchId !== null || !event.changedTouches.length) return;
+  const touch = event.changedTouches[0];
+  activeTimelineTouchId = touch.identifier;
+  event.preventDefault();
+  seekToTimelinePoint(touch.clientX);
+}
+
+function handleTimelineTouchMove(event) {
+  if (activeTimelineTouchId === null) return;
+  const touch = getActiveTimelineTouch(event.touches);
+  if (!touch) return;
+  event.preventDefault();
+  seekToTimelinePoint(touch.clientX);
+}
+
+function handleTimelineTouchEnd(event) {
+  if (activeTimelineTouchId === null) return;
+  const touch = getActiveTimelineTouch(event.changedTouches);
+  if (touch) {
+    event.preventDefault();
+    seekToTimelinePoint(touch.clientX);
+    activeTimelineTouchId = null;
+  }
+}
+
+function handleTimelineTouchCancel(event) {
+  if (activeTimelineTouchId === null) return;
+  if (getActiveTimelineTouch(event.changedTouches)) activeTimelineTouchId = null;
+}
+
+function getActiveTimelineTouch(touches) {
+  return Array.from(touches).find((touch) => touch.identifier === activeTimelineTouchId) || null;
+}
+
+function seekToTimelinePoint(clientX) {
+  seekToElapsedMs(getElapsedMsAtTimelinePoint(clientX));
+}
+
+function getElapsedMsAtTimelinePoint(clientX) {
+  const totalMs = getTotalMs();
+  if (totalMs <= 0) return 0;
+
+  const segments = Array.from(elements.timeline.querySelectorAll(".timeline-segment"));
+  if (!segments.length) return 0;
+
+  let cursorMs = 0;
+  let previousRight = null;
+  let previousElapsedMs = 0;
+
+  for (let index = 0; index < segments.length; index += 1) {
+    const timer = state.timers[index];
+    const durationMs = timer.seconds * 1000;
+    const range = getTimelineSegmentRange(segments[index]);
+
+    if (clientX < range.left) {
+      if (previousRight === null) return 0;
+      return clientX < previousRight + (range.left - previousRight) / 2
+        ? previousElapsedMs
+        : cursorMs;
+    }
+
+    if (clientX <= range.right) {
+      const progress = clampNumber((clientX - range.left) / range.width, 0, 1);
+      return cursorMs + durationMs * progress;
+    }
+
+    cursorMs += durationMs;
+    previousRight = range.right;
+    previousElapsedMs = cursorMs;
+  }
+
+  return totalMs;
+}
+
+function getTimelineSegmentRange(segment) {
+  const rect = segment.getBoundingClientRect();
+  const styles = window.getComputedStyle(segment);
+  const borderLeft = Number.parseFloat(styles.borderLeftWidth) || 0;
+  const borderRight = Number.parseFloat(styles.borderRightWidth) || 0;
+  const left = rect.left + borderLeft;
+  return {
+    left,
+    right: rect.right - borderRight,
+    width: Math.max(1, rect.width - borderLeft - borderRight),
+  };
+}
+
+function handleTimelineKeydown(event) {
+  const totalMs = getTotalMs();
+  if (totalMs <= 0) return;
+
+  const elapsedMs = getElapsedMs();
+  const smallStepMs = 5000;
+  const largeStepMs = 30000;
+  let targetElapsedMs = null;
+
+  if (event.key === "Home") targetElapsedMs = 0;
+  if (event.key === "End") targetElapsedMs = totalMs;
+  if (event.key === "ArrowLeft" || event.key === "ArrowDown") {
+    targetElapsedMs = elapsedMs - smallStepMs;
+  }
+  if (event.key === "ArrowRight" || event.key === "ArrowUp") {
+    targetElapsedMs = elapsedMs + smallStepMs;
+  }
+  if (event.key === "PageDown") targetElapsedMs = elapsedMs - largeStepMs;
+  if (event.key === "PageUp") targetElapsedMs = elapsedMs + largeStepMs;
+
+  if (targetElapsedMs === null) return;
+  event.preventDefault();
+  seekToElapsedMs(targetElapsedMs);
 }
 
 function addInterval() {
@@ -352,16 +512,18 @@ function addInterval() {
 function resetData() {
   state = defaultState();
   assistantIsThinking = false;
+  tinyLlmEnabled = isTinyLlmLoaded();
   assistantBubbleText = INITIAL_ASSISTANT_BUBBLE_TEXT;
   elements.assistantInput.value = "";
   localStorage.removeItem(STORAGE_KEY);
   localStorage.removeItem(LEGACY_STORAGE_KEY);
-  localStorage.removeItem(MODEL_CHOICE_KEY);
   localStorage.removeItem(MODEL_ASSET_KEY);
   localStorage.removeItem(LEGACY_MODEL_CHOICE_KEY);
+  localStorage.removeItem("timey-model-choice-v1");
   lastRenderedSegmentIndex = null;
   selectedTimerId = state.timers[0]?.id || null;
   removeSharedSequenceFromUrl();
+  updateAssistantStatusForModelPreference();
   persist();
   renderAll();
 }
@@ -503,9 +665,11 @@ function openAssistantPopover({ focusInput = true } = {}) {
   elements.assistantToggleButton.setAttribute("aria-expanded", "true");
   elements.assistantToggleButton.setAttribute("aria-label", "Focus Timmy timer assistant");
   elements.assistantToggleButton.title = "Timmy";
+  syncAssistantLayoutReserve();
 
   window.requestAnimationFrame(() => {
     resizeAssistantInput();
+    syncAssistantLayoutReserve();
     if (focusInput) elements.assistantInput.focus({ preventScroll: true });
   });
 }
@@ -515,131 +679,76 @@ function closeAssistantPopover() {
   elements.assistantToggleButton.setAttribute("aria-expanded", "false");
   elements.assistantToggleButton.setAttribute("aria-label", "Open Timmy assistant");
   elements.assistantToggleButton.title = "Timmy";
+  syncAssistantLayoutReserve();
 }
 
 function handleGlobalKeydown(event) {
-  if (event.key !== "Escape" || elements.assistantPopover.hidden) return;
-  closeAssistantPopover();
-  elements.assistantToggleButton.focus({ preventScroll: true });
+  if (event.key !== "Escape") return;
+  if (!elements.assistantPopover.hidden) {
+    closeAssistantPopover();
+    elements.assistantToggleButton.focus({ preventScroll: true });
+  }
 }
 
 function resizeAssistantInput() {
   elements.assistantInput.style.height = "auto";
   elements.assistantInput.style.height = `${Math.min(elements.assistantInput.scrollHeight, 136)}px`;
+  syncAssistantLayoutReserve();
 }
 
-function maybeOfferTinyLlm() {
+function updateAssistantStatusForModelPreference() {
+  if (tinyLlmEnabled && isTinyLlmLoaded()) {
+    elements.assistantStatus.textContent = `Tiny model - ${getPlannerStatus()}`;
+    return;
+  }
+  elements.assistantStatus.textContent = `${ASSISTANT_NAME} - fallback parser`;
+}
+
+async function startTinyLlmLoad() {
+  localStorage.removeItem("timey-model-choice-v1");
+  localStorage.removeItem(LEGACY_MODEL_CHOICE_KEY);
+
   if (!canUseTinyLlm()) {
     tinyLlmEnabled = false;
-    elements.assistantStatus.textContent = `${ASSISTANT_NAME} - fallback parser`;
+    updateAssistantStatusForModelPreference();
     return;
   }
-
-  const choice = getStoredModelChoice();
-  if (choice === "enabled") {
-    startTinyLlmLoad({ automatic: true });
-    return;
-  }
-  if (choice === "fallback") {
-    tinyLlmEnabled = false;
-    elements.assistantStatus.textContent = `${ASSISTANT_NAME} - fallback parser`;
-    return;
-  }
-
-  showModelModal();
-}
-
-function showModelModal() {
-  elements.modelModal.hidden = false;
-  elements.modelLoadPanel.hidden = true;
-  setModelLoadProgress(0);
-  elements.modelModalStatus.textContent = "Ready.";
-  elements.loadModelButton.disabled = false;
-  elements.useFallbackButton.disabled = false;
-}
-
-function hideModelModal() {
-  elements.modelModal.hidden = true;
-}
-
-function handleLoadModelClick() {
-  localStorage.setItem(MODEL_CHOICE_KEY, "enabled");
-  localStorage.removeItem(LEGACY_MODEL_CHOICE_KEY);
-  startTinyLlmLoad({ automatic: false });
-}
-
-function handleUseFallbackClick() {
-  localStorage.setItem(MODEL_CHOICE_KEY, "fallback");
-  localStorage.removeItem(LEGACY_MODEL_CHOICE_KEY);
-  tinyLlmEnabled = false;
-  elements.assistantStatus.textContent = `${ASSISTANT_NAME} - fallback parser`;
-  hideModelModal();
-}
-
-function getStoredModelChoice() {
-  const choice = localStorage.getItem(MODEL_CHOICE_KEY);
-  if (choice) return choice;
-
-  const legacyChoice = localStorage.getItem(LEGACY_MODEL_CHOICE_KEY);
-  if (legacyChoice) {
-    localStorage.setItem(MODEL_CHOICE_KEY, legacyChoice);
-    localStorage.removeItem(LEGACY_MODEL_CHOICE_KEY);
-  }
-  return legacyChoice;
-}
-
-async function startTinyLlmLoad({ automatic }) {
-  if (modelLoadStarted) return;
-  modelLoadStarted = true;
-  tinyLlmEnabled = false;
-  elements.loadModelButton.disabled = true;
-  elements.useFallbackButton.disabled = true;
-  elements.modelLoadPanel.hidden = false;
-  setModelLoadProgress(0);
-  if (!automatic) {
-    elements.modelModalStatus.textContent = "Loading...";
-  }
-  elements.assistantStatus.textContent = "Loading tiny LLM";
-
-  try {
-    const modelId = await preloadTinyLlm((status, progress) => {
-      elements.assistantStatus.textContent = status;
-      if (!elements.modelModal.hidden) {
-        elements.modelModalStatus.textContent = getFriendlyModelStatus(status, progress);
-        setModelLoadProgress(progress);
-      }
-    });
+  if (isTinyLlmLoaded()) {
     tinyLlmEnabled = true;
-    localStorage.setItem(MODEL_ASSET_KEY, getTinyLlmAssetKey(modelId));
-    elements.assistantStatus.textContent = `Tiny LLM - ${modelId}`;
-    hideModelModal();
-  } catch (error) {
-    tinyLlmEnabled = false;
-    elements.assistantStatus.textContent = `${ASSISTANT_NAME} - fallback parser`;
-    const message = error?.message || "Could not load the model. Falling back to the parser.";
-    if (automatic) {
-      elements.assistantStatus.textContent = `${ASSISTANT_NAME} - fallback parser`;
-      return;
-    }
-    elements.modelModalStatus.textContent = message;
-    setModelLoadProgress(0);
-    elements.loadModelButton.disabled = false;
-    elements.useFallbackButton.disabled = false;
-    modelLoadStarted = false;
+    updateAssistantStatusForModelPreference();
+    return;
   }
+  if (modelLoadPromise) return modelLoadPromise;
+
+  tinyLlmEnabled = false;
+  elements.assistantStatus.textContent = "Loading tiny timer model";
+
+  modelLoadPromise = preloadTinyLlm((status, progress) => {
+    elements.assistantStatus.textContent = formatInlineModelStatus(status, progress);
+  })
+    .then((modelId) => {
+      tinyLlmEnabled = true;
+      localStorage.setItem(MODEL_ASSET_KEY, getTinyLlmAssetKey(modelId));
+      updateAssistantStatusForModelPreference();
+      return modelId;
+    })
+    .catch((error) => {
+      tinyLlmEnabled = false;
+      updateAssistantStatusForModelPreference();
+      console.warn("Tiny timer model failed to load; using fallback parser.", error);
+      modelLoadPromise = null;
+      throw error;
+    });
+
+  return modelLoadPromise;
 }
 
-function setModelLoadProgress(progress) {
-  const value = Number.isFinite(progress) ? Math.max(0, Math.min(1, progress)) : 0;
-  elements.modelProgressFill.style.width = `${Math.round(value * 100)}%`;
-}
-
-function getFriendlyModelStatus(status, progress) {
+function formatInlineModelStatus(status, progress) {
   if (Number.isFinite(progress) && progress > 0 && progress < 1) {
-    return `${Math.round(progress * 100)}%`;
+    return `Loading tiny timer model - ${Math.round(progress * 100)}%`;
   }
-  if (/finish|ready|loaded/i.test(status)) return "Ready.";
-  return "Loading...";
+  if (/finish|ready|loaded/i.test(status)) return `Tiny model - ${getPlannerStatus()}`;
+  return status || "Loading tiny timer model";
 }
 
 async function handleAssistantSubmit(event) {
@@ -655,6 +764,9 @@ async function handleAssistantSubmit(event) {
   elements.assistantSubmit.textContent = "Thinking";
 
   try {
+    if (canUseTinyLlm() && !isTinyLlmLoaded()) {
+      await startTinyLlmLoad().catch(() => {});
+    }
     const result = await submitAssistantText({
       state,
       text,
@@ -716,9 +828,9 @@ async function copyText(text) {
 function updateAssistantStatusFromPlan(plan) {
   elements.assistantStatus.textContent =
     plan.source === "tiny-llm"
-      ? `Tiny LLM - ${plan.model}`
+      ? `Tiny model - ${plan.model}`
       : tinyLlmEnabled && isTinyLlmLoaded()
-        ? "Tiny LLM - fallback"
+        ? "Tiny model - fallback"
         : "Fallback parser";
 }
 
@@ -930,7 +1042,12 @@ function renderTimeline(activeIndex, elapsedMs, totalMs) {
   const totalSeconds = Math.max(1, state.timers.reduce((total, timer) => total + timer.seconds, 0));
   let cursorSeconds = 0;
   const elapsedSeconds = elapsedMs / 1000;
-  const playheadLeft = totalMs > 0 ? clampNumber(elapsedMs / totalMs, 0, 1) * 100 : 0;
+  elements.timeline.setAttribute("aria-valuemax", String(Math.round(totalMs / 1000)));
+  elements.timeline.setAttribute("aria-valuenow", String(Math.round(elapsedMs / 1000)));
+  elements.timeline.setAttribute(
+    "aria-valuetext",
+    `${formatClock(elapsedMs)} of ${formatClock(totalMs)}`,
+  );
   elements.timeline.innerHTML = state.timers
     .map((timer, index) => {
       const color = kindMeta[timer.kind]?.color || kindMeta.other.color;
@@ -944,7 +1061,21 @@ function renderTimeline(activeIndex, elapsedMs, totalMs) {
         <div class="timeline-segment-fill"></div>
       </div>`;
     })
-    .join("") + `<div class="timeline-playhead" style="left: ${playheadLeft}%"></div>`;
+    .join("") + `<div class="timeline-playhead"></div>`;
+  positionTimelinePlayhead(activeIndex);
+}
+
+function positionTimelinePlayhead(activeIndex) {
+  const playhead = elements.timeline.querySelector(".timeline-playhead");
+  const activeSegment = elements.timeline.querySelectorAll(".timeline-segment")[activeIndex];
+  const activeFill = activeSegment?.querySelector(".timeline-segment-fill");
+  if (!playhead || !activeFill) return;
+
+  const timelineRect = elements.timeline.getBoundingClientRect();
+  const timelineStyles = window.getComputedStyle(elements.timeline);
+  const borderLeft = Number.parseFloat(timelineStyles.borderLeftWidth) || 0;
+  const fillRect = activeFill.getBoundingClientRect();
+  playhead.style.left = `${fillRect.right - timelineRect.left - borderLeft}px`;
 }
 
 function renderAssistantBubble() {
@@ -956,6 +1087,15 @@ function renderAssistantBubble() {
       ? "Add more detail..."
       : "8 min warmup, 8 x 1 min hard / 1 min rest...";
   resizeAssistantInput();
+  syncAssistantLayoutReserve();
+}
+
+function syncAssistantLayoutReserve() {
+  if (!elements.assistantWidget) return;
+  const rect = elements.assistantWidget.getBoundingClientRect();
+  const bottomGap = Math.max(0, window.innerHeight - rect.bottom);
+  const reserveBottom = Math.ceil(rect.height + bottomGap + 10);
+  document.documentElement.style.setProperty("--assistant-reserve-bottom", `${reserveBottom}px`);
 }
 
 function getElapsedMs(now = Date.now()) {

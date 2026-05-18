@@ -1,3 +1,4 @@
+import "./timer-dsl.test.mjs";
 import "./fallback-planner.test.mjs";
 import "./assistant-session.test.mjs";
 

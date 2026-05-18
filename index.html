@@ -142,7 +142,17 @@
                 </button>
               </div>
 
-              <div class="timeline" id="timeline" aria-label="Interval timeline"></div>
+              <div
+                class="timeline"
+                id="timeline"
+                role="slider"
+                tabindex="0"
+                aria-label="Interval timeline"
+                aria-valuemin="0"
+                aria-valuemax="0"
+                aria-valuenow="0"
+                aria-valuetext="00:00 of 00:00"
+              ></div>
             </section>
 
             <section
@@ -182,7 +192,7 @@
       </main>
 
       <div class="assistant-widget" id="assistantWidget">
-        <div class="assistant-status sr-only" id="assistantStatus" aria-live="polite">Tiny LLM</div>
+        <div class="assistant-status sr-only" id="assistantStatus" aria-live="polite">Tiny timer model</div>
         <aside class="assistant-bubble" id="assistantPopover" aria-label="Timer composer">
           <button
             class="assistant-close-button"
@@ -236,34 +246,6 @@
           <span class="assistant-launcher-face" aria-hidden="true">TY</span>
         </button>
       </div>
-    </div>
-
-    <div class="modal-backdrop" id="modelModal" hidden>
-      <section
-        class="model-modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="modelModalTitle"
-        aria-describedby="modelModalText"
-      >
-        <div>
-          <span class="eyebrow">Tiny LLM</span>
-          <h2 id="modelModalTitle">Make Timmy smarter?</h2>
-        </div>
-        <p id="modelModalText">
-          Load the local assistant model for better workout edits. It runs on this device.
-        </p>
-        <div class="model-load-panel" id="modelLoadPanel" hidden>
-          <div class="progress-track" aria-hidden="true">
-            <div class="progress-fill" id="modelProgressFill"></div>
-          </div>
-          <div class="model-modal-status" id="modelModalStatus">Loading...</div>
-        </div>
-        <div class="model-modal-actions">
-          <button class="ghost-button" id="useFallbackButton" type="button">Use Fallback</button>
-          <button class="solid-button" id="loadModelButton" type="button">Load Model</button>
-        </div>
-      </section>
     </div>
 
     <script type="module" src="./main.js"></script>

@@ -7,7 +7,13 @@
     "test": "node tests/run.mjs",
     "test:fallback": "node tests/run-fallback.mjs",
     "test:llm": "node tests/run-llm.mjs",
-    "test:browser": "playwright test tests/browser/cache-separation.spec.mjs"
+    "test:browser": "playwright test tests/browser",
+    "test:llm:real": "TIMEY_REAL_TINY_MODEL=1 playwright test tests/browser/real-tiny-model.spec.mjs",
+    "debug:tiny-model": "node scripts/debug-tiny-browser-model.mjs",
+    "training:build": "node scripts/training/build-timer-sft.mjs --target-format dsl --user-format natural --dsl-end-token --out-dir training/generated-dsl-compressed-end",
+    "training:validate": "node scripts/training/validate-timer-sft.mjs training/generated-dsl-compressed-end/timer-sft-train.jsonl training/generated-dsl-compressed-end/timer-sft-validation.jsonl",
+    "training:eval": "node scripts/training/eval-timer-model.mjs",
+    "training:seq2seq": ".venv-mlx/bin/python scripts/training/seq2seq-timer-benchmark.py"
   },
   "devDependencies": {
     "@playwright/test": "^1.60.0"
