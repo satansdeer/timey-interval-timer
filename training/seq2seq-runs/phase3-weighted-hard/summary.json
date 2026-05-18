@@ -1,0 +1,483 @@
+{
+  "model": "training/seq2seq-runs/t5-efficient-tiny-positional-generic-lr1e-5/checkpoint-250",
+  "device": "mps",
+  "trainRecords": 771,
+  "effectiveTrainRecords": 1257,
+  "validationRecords": 145,
+  "generation": {
+    "inputFormat": "compact",
+    "evalBatchSize": 8,
+    "maxNewTokens": 128,
+    "numBeams": 4,
+    "repetitionPenalty": 1.0,
+    "noRepeatNgramSize": 0,
+    "lengthPenalty": 1.0,
+    "earlyStopping": true
+  },
+  "training": {
+    "trainOrder": "shuffle",
+    "learningRate": 1e-05,
+    "batchSize": 8,
+    "weightDecay": 0.01,
+    "maxGradNorm": 1.0,
+    "categoryWeight": {
+      "generic-position": 3,
+      "explicit-label-copy": 4,
+      "explicit-sequence": 6
+    }
+  },
+  "steps": [
+    {
+      "step": 0,
+      "parseable": 145,
+      "parseableRate": 1.0,
+      "strictExact": 139,
+      "strictExactRate": 0.9586,
+      "semanticExact": 139,
+      "semanticExactRate": 0.9586,
+      "categorySummary": [
+        {
+          "category": "generic-position",
+          "count": 5,
+          "parseable": 5,
+          "strictExact": 0,
+          "semanticExact": 0,
+          "parseableRate": 1.0,
+          "strictExactRate": 0.0,
+          "semanticExactRate": 0.0
+        },
+        {
+          "category": "generic-timers",
+          "count": 2,
+          "parseable": 2,
+          "strictExact": 1,
+          "semanticExact": 1,
+          "parseableRate": 1.0,
+          "strictExactRate": 0.5,
+          "semanticExactRate": 0.5
+        },
+        {
+          "category": "core-regression",
+          "count": 2,
+          "parseable": 2,
+          "strictExact": 2,
+          "semanticExact": 2,
+          "parseableRate": 1.0,
+          "strictExactRate": 1.0,
+          "semanticExactRate": 1.0
+        },
+        {
+          "category": "count-generic",
+          "count": 21,
+          "parseable": 21,
+          "strictExact": 21,
+          "semanticExact": 21,
+          "parseableRate": 1.0,
+          "strictExactRate": 1.0,
+          "semanticExactRate": 1.0
+        },
+        {
+          "category": "count-middle",
+          "count": 35,
+          "parseable": 35,
+          "strictExact": 35,
+          "semanticExact": 35,
+          "parseableRate": 1.0,
+          "strictExactRate": 1.0,
+          "semanticExactRate": 1.0
+        },
+        {
+          "category": "count-pairs",
+          "count": 22,
+          "parseable": 22,
+          "strictExact": 22,
+          "semanticExact": 22,
+          "parseableRate": 1.0,
+          "strictExactRate": 1.0,
+          "semanticExactRate": 1.0
+        },
+        {
+          "category": "explicit-label-copy",
+          "count": 22,
+          "parseable": 22,
+          "strictExact": 22,
+          "semanticExact": 22,
+          "parseableRate": 1.0,
+          "strictExactRate": 1.0,
+          "semanticExactRate": 1.0
+        },
+        {
+          "category": "explicit-sequence",
+          "count": 1,
+          "parseable": 1,
+          "strictExact": 1,
+          "semanticExact": 1,
+          "parseableRate": 1.0,
+          "strictExactRate": 1.0,
+          "semanticExactRate": 1.0
+        },
+        {
+          "category": "individual-middle",
+          "count": 26,
+          "parseable": 26,
+          "strictExact": 26,
+          "semanticExact": 26,
+          "parseableRate": 1.0,
+          "strictExactRate": 1.0,
+          "semanticExactRate": 1.0
+        },
+        {
+          "category": "pairs",
+          "count": 9,
+          "parseable": 9,
+          "strictExact": 9,
+          "semanticExact": 9,
+          "parseableRate": 1.0,
+          "strictExactRate": 1.0,
+          "semanticExactRate": 1.0
+        }
+      ],
+      "seconds": 18.219,
+      "predictions": "training/seq2seq-runs/phase3-weighted-hard/predictions-step-0.jsonl"
+    },
+    {
+      "step": 100,
+      "parseable": 145,
+      "parseableRate": 1.0,
+      "strictExact": 138,
+      "strictExactRate": 0.9517,
+      "semanticExact": 138,
+      "semanticExactRate": 0.9517,
+      "categorySummary": [
+        {
+          "category": "generic-position",
+          "count": 5,
+          "parseable": 5,
+          "strictExact": 0,
+          "semanticExact": 0,
+          "parseableRate": 1.0,
+          "strictExactRate": 0.0,
+          "semanticExactRate": 0.0
+        },
+        {
+          "category": "generic-timers",
+          "count": 2,
+          "parseable": 2,
+          "strictExact": 1,
+          "semanticExact": 1,
+          "parseableRate": 1.0,
+          "strictExactRate": 0.5,
+          "semanticExactRate": 0.5
+        },
+        {
+          "category": "count-generic",
+          "count": 21,
+          "parseable": 21,
+          "strictExact": 20,
+          "semanticExact": 20,
+          "parseableRate": 1.0,
+          "strictExactRate": 0.9524,
+          "semanticExactRate": 0.9524
+        },
+        {
+          "category": "core-regression",
+          "count": 2,
+          "parseable": 2,
+          "strictExact": 2,
+          "semanticExact": 2,
+          "parseableRate": 1.0,
+          "strictExactRate": 1.0,
+          "semanticExactRate": 1.0
+        },
+        {
+          "category": "count-middle",
+          "count": 35,
+          "parseable": 35,
+          "strictExact": 35,
+          "semanticExact": 35,
+          "parseableRate": 1.0,
+          "strictExactRate": 1.0,
+          "semanticExactRate": 1.0
+        },
+        {
+          "category": "count-pairs",
+          "count": 22,
+          "parseable": 22,
+          "strictExact": 22,
+          "semanticExact": 22,
+          "parseableRate": 1.0,
+          "strictExactRate": 1.0,
+          "semanticExactRate": 1.0
+        },
+        {
+          "category": "explicit-label-copy",
+          "count": 22,
+          "parseable": 22,
+          "strictExact": 22,
+          "semanticExact": 22,
+          "parseableRate": 1.0,
+          "strictExactRate": 1.0,
+          "semanticExactRate": 1.0
+        },
+        {
+          "category": "explicit-sequence",
+          "count": 1,
+          "parseable": 1,
+          "strictExact": 1,
+          "semanticExact": 1,
+          "parseableRate": 1.0,
+          "strictExactRate": 1.0,
+          "semanticExactRate": 1.0
+        },
+        {
+          "category": "individual-middle",
+          "count": 26,
+          "parseable": 26,
+          "strictExact": 26,
+          "semanticExact": 26,
+          "parseableRate": 1.0,
+          "strictExactRate": 1.0,
+          "semanticExactRate": 1.0
+        },
+        {
+          "category": "pairs",
+          "count": 9,
+          "parseable": 9,
+          "strictExact": 9,
+          "semanticExact": 9,
+          "parseableRate": 1.0,
+          "strictExactRate": 1.0,
+          "semanticExactRate": 1.0
+        }
+      ],
+      "seconds": 10.59,
+      "predictions": "training/seq2seq-runs/phase3-weighted-hard/predictions-step-100.jsonl"
+    },
+    {
+      "step": 250,
+      "parseable": 145,
+      "parseableRate": 1.0,
+      "strictExact": 139,
+      "strictExactRate": 0.9586,
+      "semanticExact": 139,
+      "semanticExactRate": 0.9586,
+      "categorySummary": [
+        {
+          "category": "generic-position",
+          "count": 5,
+          "parseable": 5,
+          "strictExact": 0,
+          "semanticExact": 0,
+          "parseableRate": 1.0,
+          "strictExactRate": 0.0,
+          "semanticExactRate": 0.0
+        },
+        {
+          "category": "generic-timers",
+          "count": 2,
+          "parseable": 2,
+          "strictExact": 1,
+          "semanticExact": 1,
+          "parseableRate": 1.0,
+          "strictExactRate": 0.5,
+          "semanticExactRate": 0.5
+        },
+        {
+          "category": "core-regression",
+          "count": 2,
+          "parseable": 2,
+          "strictExact": 2,
+          "semanticExact": 2,
+          "parseableRate": 1.0,
+          "strictExactRate": 1.0,
+          "semanticExactRate": 1.0
+        },
+        {
+          "category": "count-generic",
+          "count": 21,
+          "parseable": 21,
+          "strictExact": 21,
+          "semanticExact": 21,
+          "parseableRate": 1.0,
+          "strictExactRate": 1.0,
+          "semanticExactRate": 1.0
+        },
+        {
+          "category": "count-middle",
+          "count": 35,
+          "parseable": 35,
+          "strictExact": 35,
+          "semanticExact": 35,
+          "parseableRate": 1.0,
+          "strictExactRate": 1.0,
+          "semanticExactRate": 1.0
+        },
+        {
+          "category": "count-pairs",
+          "count": 22,
+          "parseable": 22,
+          "strictExact": 22,
+          "semanticExact": 22,
+          "parseableRate": 1.0,
+          "strictExactRate": 1.0,
+          "semanticExactRate": 1.0
+        },
+        {
+          "category": "explicit-label-copy",
+          "count": 22,
+          "parseable": 22,
+          "strictExact": 22,
+          "semanticExact": 22,
+          "parseableRate": 1.0,
+          "strictExactRate": 1.0,
+          "semanticExactRate": 1.0
+        },
+        {
+          "category": "explicit-sequence",
+          "count": 1,
+          "parseable": 1,
+          "strictExact": 1,
+          "semanticExact": 1,
+          "parseableRate": 1.0,
+          "strictExactRate": 1.0,
+          "semanticExactRate": 1.0
+        },
+        {
+          "category": "individual-middle",
+          "count": 26,
+          "parseable": 26,
+          "strictExact": 26,
+          "semanticExact": 26,
+          "parseableRate": 1.0,
+          "strictExactRate": 1.0,
+          "semanticExactRate": 1.0
+        },
+        {
+          "category": "pairs",
+          "count": 9,
+          "parseable": 9,
+          "strictExact": 9,
+          "semanticExact": 9,
+          "parseableRate": 1.0,
+          "strictExactRate": 1.0,
+          "semanticExactRate": 1.0
+        }
+      ],
+      "seconds": 10.879,
+      "predictions": "training/seq2seq-runs/phase3-weighted-hard/predictions-step-250.jsonl"
+    },
+    {
+      "step": 500,
+      "parseable": 145,
+      "parseableRate": 1.0,
+      "strictExact": 138,
+      "strictExactRate": 0.9517,
+      "semanticExact": 138,
+      "semanticExactRate": 0.9517,
+      "categorySummary": [
+        {
+          "category": "generic-position",
+          "count": 5,
+          "parseable": 5,
+          "strictExact": 0,
+          "semanticExact": 0,
+          "parseableRate": 1.0,
+          "strictExactRate": 0.0,
+          "semanticExactRate": 0.0
+        },
+        {
+          "category": "generic-timers",
+          "count": 2,
+          "parseable": 2,
+          "strictExact": 0,
+          "semanticExact": 0,
+          "parseableRate": 1.0,
+          "strictExactRate": 0.0,
+          "semanticExactRate": 0.0
+        },
+        {
+          "category": "core-regression",
+          "count": 2,
+          "parseable": 2,
+          "strictExact": 2,
+          "semanticExact": 2,
+          "parseableRate": 1.0,
+          "strictExactRate": 1.0,
+          "semanticExactRate": 1.0
+        },
+        {
+          "category": "count-generic",
+          "count": 21,
+          "parseable": 21,
+          "strictExact": 21,
+          "semanticExact": 21,
+          "parseableRate": 1.0,
+          "strictExactRate": 1.0,
+          "semanticExactRate": 1.0
+        },
+        {
+          "category": "count-middle",
+          "count": 35,
+          "parseable": 35,
+          "strictExact": 35,
+          "semanticExact": 35,
+          "parseableRate": 1.0,
+          "strictExactRate": 1.0,
+          "semanticExactRate": 1.0
+        },
+        {
+          "category": "count-pairs",
+          "count": 22,
+          "parseable": 22,
+          "strictExact": 22,
+          "semanticExact": 22,
+          "parseableRate": 1.0,
+          "strictExactRate": 1.0,
+          "semanticExactRate": 1.0
+        },
+        {
+          "category": "explicit-label-copy",
+          "count": 22,
+          "parseable": 22,
+          "strictExact": 22,
+          "semanticExact": 22,
+          "parseableRate": 1.0,
+          "strictExactRate": 1.0,
+          "semanticExactRate": 1.0
+        },
+        {
+          "category": "explicit-sequence",
+          "count": 1,
+          "parseable": 1,
+          "strictExact": 1,
+          "semanticExact": 1,
+          "parseableRate": 1.0,
+          "strictExactRate": 1.0,
+          "semanticExactRate": 1.0
+        },
+        {
+          "category": "individual-middle",
+          "count": 26,
+          "parseable": 26,
+          "strictExact": 26,
+          "semanticExact": 26,
+          "parseableRate": 1.0,
+          "strictExactRate": 1.0,
+          "semanticExactRate": 1.0
+        },
+        {
+          "category": "pairs",
+          "count": 9,
+          "parseable": 9,
+          "strictExact": 9,
+          "semanticExact": 9,
+          "parseableRate": 1.0,
+          "strictExactRate": 1.0,
+          "semanticExactRate": 1.0
+        }
+      ],
+      "seconds": 10.81,
+      "predictions": "training/seq2seq-runs/phase3-weighted-hard/predictions-step-500.jsonl"
+    }
+  ]
+}

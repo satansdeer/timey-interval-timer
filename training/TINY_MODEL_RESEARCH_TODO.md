@@ -503,7 +503,7 @@ Risks:
 
 ### Phase 3: Focused Continuation Training Sweep
 
-Status: pending
+Status: completed initial sweep 2026-05-18; no checkpoint promoted.
 
 Hypothesis:
 
@@ -525,6 +525,24 @@ Suggested sweeps:
 | low-lr-b | `1e-5` | none | `0,100,250,500` |
 | low-lr-c | `2e-5` | none | `0,100,250,500` |
 | weighted-hard | `1e-5` | `generic-position=3,explicit-label-copy=4,explicit-sequence=6` | `0,100,250,500` |
+
+Sweep result:
+
+| Run | Best strict validation | Result |
+| --- | ---: | --- |
+| `phase3-low-lr-a` | 139/145 | Flat; no target-category improvement |
+| `phase3-low-lr-b` | 139/145 | Flat; no target-category improvement |
+| `phase3-low-lr-c` | 139/145 | Flat; no target-category improvement |
+| `phase3-weighted-hard` | 139/145 | No target-category improvement; regressed to 138/145 at steps 100 and 500 |
+
+The persistent model-only failures are `generic-position` and `generic-timers`.
+The browser runtime passes current acceptance because deterministic generic-list
+repair covers the simple cases, but the seq2seq checkpoint itself did not learn
+those validation examples through simple continuation.
+
+Artifact:
+
+- `training/eval-runs/phase3-continuation-sweep/README.md`
 
 Command template:
 
@@ -562,6 +580,12 @@ Promotion criteria:
 
 Do not promote based only on Python/HF validation exact match. Browser ONNX
 beam output is the deployment truth.
+
+Phase 3 conclusion:
+
+- No Phase 3 checkpoint should be exported or promoted.
+- Move to Phase 4 hard-data expansion / teacher distillation before more
+  continuation training.
 
 ### Phase 4: Teacher Distillation / Hard Data Expansion
 
