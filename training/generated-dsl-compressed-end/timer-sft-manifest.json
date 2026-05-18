@@ -1,8 +1,9 @@
 {
-  "datasetVersion": "2026-05-17",
+  "datasetVersion": "2026-05-18",
   "targetFormat": "dsl",
   "userFormat": "natural",
   "dslEndToken": true,
+  "phase4HardData": false,
   "qwen3NoThink": false,
   "validationRatio": 0.18,
   "files": {

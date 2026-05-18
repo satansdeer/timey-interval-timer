@@ -1,6 +1,6 @@
 # Timey Tiny Model Research And Optimization TODO
 
-Last updated: 2026-05-17
+Last updated: 2026-05-18
 
 This document is the continuity file for pushing Timey's in-browser timer model
 as far as practical on both capability and footprint. It is intended to be
@@ -107,7 +107,8 @@ Core app/runtime:
 - `timer-dsl.js`
   - Shared parser/formatter for human DSL and model DSL.
   - Owns `parseTimerDsl`, compact duration formatting, repeat syntax,
-    kind inference, and `findTimerDslStartIndex`.
+    compact generic group syntax, kind inference, and
+    `findTimerDslStartIndex`.
 - `llm-planner.js`
   - Tiny model preload and inference.
   - Direct DSL bypass before model generation.
@@ -680,9 +681,7 @@ Phase 4 conclusion:
 - Template-only hard data helps `generic-timers-hard` and a small part of
   `generic-position-hard`, but does not fix the original `generic-position`
   validation examples.
-- Next work should be true teacher paraphrase distillation, a DSL-level
-  bookend/group syntax, or semantic deterministic constraints for provable
-  generic-position facts.
+- Follow-up work tried the DSL-level bookend/group syntax. See Phase 4B below.
 
 Risks:
 
@@ -690,6 +689,77 @@ Risks:
   templates. Keep hard validation examples separate.
 - Teacher may produce unnatural wording. Filter obvious artifacts.
 - More data can dilute already-good categories. Use category weights if needed.
+
+### Phase 4B: Compact Generic Group DSL
+
+Status: completed 2026-05-18; parser/dataset change kept, no checkpoint
+promoted.
+
+Hypothesis:
+
+Generic positional failures are partly caused by the target DSL requiring the
+model to repeat endpoint lines independently. A denser generic syntax should
+let the model express the same sequence with fewer copied facts.
+
+Implemented syntax in `timer-dsl.js`:
+
+```text
+4m around 5x30s: Timer
+30s + 5x10s + 1m: Timer
+```
+
+Meaning:
+
+- `around` is equal generic bookends around a middle generic group.
+- `+` is an ordered generic group chain, including asymmetric endpoints.
+- `5x30s` is accepted as no-space repeat shorthand, alongside the older
+  `5x 30s`.
+
+Dataset changes:
+
+- Regenerated `training/generated-dsl-compressed-end/`.
+- Regenerated `training/generated-dsl-compressed-end-phase4-hard/`.
+- Splits and category counts stayed the same.
+- Generic bookend targets now use `around` when endpoints match.
+- Asymmetric generic sequences now use `+`.
+- Warmup/cooldown, work/rest, pair, alt, and explicit-label targets keep the
+  existing syntax.
+
+Measurement artifact:
+
+- `training/eval-runs/phase5-dsl-groups/README.md`
+
+Runs from current production checkpoint:
+
+```text
+training/seq2seq-runs/t5-efficient-tiny-positional-generic-lr1e-5/checkpoint-250
+```
+
+Results:
+
+| Run | Best strict | Best target gain | Result |
+| --- | ---: | --- | --- |
+| `phase5-dsl-groups-weighted-lr1e-5` | 143/161 at step 0 | step 500 reaches `generic-position` 3/5 and `generic-position-hard` 5/10 | not usable; parseability regresses to 143/161 |
+| `phase5-dsl-groups-weighted-lr1e-5-midpoints` | 144/161 at step 450 | step 450 reaches `generic-position` 3/5 and `generic-position-hard` 5/10 | not usable; broad regression remains |
+| `phase5-dsl-groups-soft-lr5e-6` | 143/161 at step 0 | step 750 reaches only `generic-position` 1/5 | not useful; no stable target gain |
+
+Conclusion:
+
+- The DSL change is valid and useful for humans/data.
+- The model can learn `around`, but weighted continuation overgeneralizes it.
+- The common bad output shape is `warmup around alt middle cooldown`, for
+  example:
+
+```text
+12m around 5alt 45s: Rest | 45s: Work 9m: Cooldown END
+```
+
+- No Phase 4B/5 checkpoint should be exported or deployed.
+- Next useful work is either:
+  - runtime semantic constraints that allow `around` only for generic `Timer`
+    groups and never around `alt`/work-rest forms; or
+  - teacher/contrastive distillation with many negative examples where
+    warmup/cooldown and work/rest must keep the old syntax.
 
 ### Phase 5: Quantization-Aware Continuation
 

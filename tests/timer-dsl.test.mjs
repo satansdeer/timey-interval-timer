@@ -6,6 +6,44 @@ assert.deepEqual(parseTimerDsl("2x 2m30s: Step").timers, [
   { label: "Step", durationSeconds: 150, kind: "other" },
 ]);
 
+assert.deepEqual(parseTimerDsl("2x2m30s: Step").timers, [
+  { label: "Step", durationSeconds: 150, kind: "other" },
+  { label: "Step", durationSeconds: 150, kind: "other" },
+]);
+
+assert.deepEqual(parseTimerDsl("4m around 5x30s: Timer").timers.map(({ label, durationSeconds, kind }) => [
+  label,
+  durationSeconds,
+  kind,
+]), [
+  ["Timer 1", 240, "other"],
+  ["Timer 2", 30, "other"],
+  ["Timer 3", 30, "other"],
+  ["Timer 4", 30, "other"],
+  ["Timer 5", 30, "other"],
+  ["Timer 6", 30, "other"],
+  ["Timer 7", 240, "other"],
+]);
+
+assert.deepEqual(parseTimerDsl("30s + 5x10s + 1m: Timer").timers.map(({ label, durationSeconds, kind }) => [
+  label,
+  durationSeconds,
+  kind,
+]), [
+  ["Timer 1", 30, "other"],
+  ["Timer 2", 10, "other"],
+  ["Timer 3", 10, "other"],
+  ["Timer 4", 10, "other"],
+  ["Timer 5", 10, "other"],
+  ["Timer 6", 10, "other"],
+  ["Timer 7", 60, "other"],
+]);
+
+assert.deepEqual(parseTimerDsl("1m: Run around, 30s: Warm + Cool").timers, [
+  { label: "Run around", durationSeconds: 60, kind: "other" },
+  { label: "Warm + Cool", durationSeconds: 30, kind: "warmup" },
+]);
+
 assert.deepEqual(parseTimerDsl("4x 1m: Rest | 1m: Work").timers.map(({ label, durationSeconds, kind }) => [
   label,
   durationSeconds,
@@ -75,6 +113,10 @@ for (const prefix of [
   "8m: Warmup 4x",
   "4x",
   "4x ",
+  "4m around",
+  "4m aroun",
+  "4m +",
+  "4m + 5x",
   "4x 1m: Rest |",
   "4x 1m: Rest | 1",
   "4x 1m: Rest | 1m:",

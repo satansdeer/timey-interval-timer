@@ -41,9 +41,12 @@ END
 Supported dense forms:
 
 - `2x 2m30s: Step` repeats the same timer twice.
+- `2x2m30s: Step` is also accepted when omitting the space after `x`.
 - `4x 1m: Rest | 1m: Work` repeats the full rest/work block 4 times.
 - `5alt 45s: Rest | 45s: Work` emits 5 total alternating timers.
 - `7x 40s: Timer` emits 7 generic timers; the parser numbers them internally.
+- `8m + 4x1m + 8m: Timer` emits ordered generic timer groups with one shared label.
+- `4m around 5x30s: Timer` emits equal generic bookends around a middle group.
 
 The final `END` line is a training and evaluation stop marker. The parser strips
 it before comparison, so the timer syntax remains valid human input.
@@ -147,6 +150,11 @@ prompt `first and last timers 5 minute, 5 one minute in between` without
 regressing non-positional validation. The remaining raw-model misses are generic
 list variants covered by the shared deterministic generic-list repair in the
 browser path.
+
+The current dataset adds compact generic group targets for those remaining raw
+model misses. Symmetric generic bookends use `around`; asymmetric generic
+sequences use `+`. This is intended to reduce endpoint-copy and middle-run
+duplication errors during the next focused continuation run.
 
 ## Browser Export
 

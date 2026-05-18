@@ -2,16 +2,27 @@ export const MAX_INTERVALS = 200;
 export const TIMER_DSL_END_TOKEN = "END";
 export const TIMER_DSL_DURATION_UNITS =
   "hours?|hrs?|hr|h|minutes?|mins?|minu|mintues?|mintutes?|min|m|seconds?|secs?|sec|s";
+const TIMER_DSL_DURATION_PATTERN = `(?:(?:\\d+(?:\\.\\d+)?)\\s*(?:${TIMER_DSL_DURATION_UNITS})\\s*)+`;
 export const ALLOWED_TIMER_KINDS = new Set(["warmup", "work", "rest", "cooldown", "other"]);
 
 const DURATION_START_PATTERN = new RegExp(
-  `^(?:(?:\\d+(?:\\.\\d+)?)\\s*(?:${TIMER_DSL_DURATION_UNITS})\\s*)+:\\s*`,
+  `^${TIMER_DSL_DURATION_PATTERN}:\\s*`,
   "i",
 );
-const REPEAT_START_PATTERN = /^\d+\s*(?:x|alt)\s+/i;
+const REPEAT_START_PATTERN = /^\d+\s*(?:x|alt)\s*/i;
+const GENERIC_GROUP_START_PATTERN = new RegExp(
+  `^(?:\\d+\\s*x\\s*)?${TIMER_DSL_DURATION_PATTERN}\\s*(?:\\+|around\\b)`,
+  "i",
+);
 const TIMER_DSL_PREFIX_COMPLETIONS = [
   "D",
   "ND",
+  "d 1s: Timer",
+  "und 1s: Timer",
+  "ound 1s: Timer",
+  "round 1s: Timer",
+  " around 1s: Timer",
+  " + 1s: Timer",
   "s: Timer",
   "m: Timer",
   ": Timer",
@@ -72,7 +83,7 @@ export function getTimerDslPrefixState(content, options = {}) {
 export function findTimerDslStartIndex(text) {
   const source = String(text || "");
   const match = new RegExp(
-    `(?:^|[\\s,;])((?:\\d+\\s*(?:x|alt)\\s+)?(?:(?:\\d+(?:\\.\\d+)?)\\s*(?:${TIMER_DSL_DURATION_UNITS})\\s*)+:)`,
+    `(?:^|[\\s,;])((?:\\d+\\s*(?:x|alt)\\s*)?${TIMER_DSL_DURATION_PATTERN}(?=\\s*(?::|\\+|around\\b)))`,
     "i",
   ).exec(source);
   return match ? match.index + match[0].indexOf(match[1]) : -1;
@@ -309,12 +320,17 @@ function splitTimerDslCommands(source) {
 
 function isTimerDslCommandStart(tail, before) {
   if (previousNonWhitespace(before) === "|") return false;
+  if (previousNonWhitespace(before) === "+") return false;
   if (/(?:^|\s)\d+\s*(?:x|alt)\s*$/i.test(before)) return false;
-  return REPEAT_START_PATTERN.test(tail) || DURATION_START_PATTERN.test(tail);
+  if (/(?:^|\s)around\s*$/i.test(before)) return false;
+  return REPEAT_START_PATTERN.test(tail) || DURATION_START_PATTERN.test(tail) || GENERIC_GROUP_START_PATTERN.test(tail);
 }
 
 function parseTimerDslCommand(command, context) {
-  const match = String(command || "").match(/^(?:(\d+)\s*(x|alt)\s+)?([\s\S]+)$/i);
+  const groupedCommand = parseGenericGroupCommand(command, context);
+  if (groupedCommand) return groupedCommand;
+
+  const match = String(command || "").match(/^(?:(\d+)\s*(x|alt)\s*)?([\s\S]+)$/i);
   if (!match) throw new Error(`${context}: expected timer command`);
 
   const count = match[1] ? Number(match[1]) : 1;
@@ -339,12 +355,85 @@ function parseTimerDslCommand(command, context) {
   return timers;
 }
 
+function parseGenericGroupCommand(command, context) {
+  const source = String(command || "").trim();
+  const match = source.match(/^([\s\S]+?)\s*:\s*(.+?)\s*$/);
+  if (!match) {
+    if (/[+]|\baround\b/i.test(source)) {
+      throw new Error(`${context}: expected grouped duration expression followed by : label`);
+    }
+    return null;
+  }
+
+  const expression = match[1].trim();
+  if (!/[+]/.test(expression) && !/\baround\b/i.test(expression)) return null;
+
+  const label = normalizeTimerLabel(match[2]);
+  const kind = inferTimerKind(label);
+  const canonicalLabel = canonicalTimerLabel(label, kind);
+
+  if (/\baround\b/i.test(expression)) {
+    const aroundMatch = expression.match(/^([\s\S]+?)\s+around\s+([\s\S]+)$/i);
+    if (!aroundMatch) throw new Error(`${context}: expected duration around duration expression`);
+
+    const bookendGroups = parseGenericGroupTerms(aroundMatch[1], `${context}: bookend`);
+    if (bookendGroups.length !== 1 || bookendGroups[0].count !== 1) {
+      throw new Error(`${context}: around requires one unrepeated bookend duration`);
+    }
+    const middleGroups = parseGenericGroupTerms(aroundMatch[2], `${context}: middle`);
+    return expandGenericGroups([...bookendGroups, ...middleGroups, ...bookendGroups], canonicalLabel, kind, context);
+  }
+
+  const groups = parseGenericGroupTerms(expression, `${context}: group`);
+  if (groups.length < 2) throw new Error(`${context}: grouped duration expression must contain at least two terms`);
+  return expandGenericGroups(groups, canonicalLabel, kind, context);
+}
+
+function parseGenericGroupTerms(expression, context) {
+  const terms = String(expression || "")
+    .split(/\s*\+\s*/)
+    .map((term) => term.trim());
+  if (!terms.length || terms.some((term) => !term)) {
+    throw new Error(`${context}: expected duration terms`);
+  }
+  return terms.map((term, index) => parseGenericGroupTerm(term, `${context}: term ${index + 1}`));
+}
+
+function parseGenericGroupTerm(term, context) {
+  const match = String(term || "").match(new RegExp(`^(?:(\\d+)\\s*x\\s*)?(${TIMER_DSL_DURATION_PATTERN})$`, "i"));
+  if (!match) throw new Error(`${context}: expected duration or Nx duration`);
+
+  const count = match[1] ? Number(match[1]) : 1;
+  if (!Number.isInteger(count) || count < 1 || count > MAX_INTERVALS) {
+    throw new Error(`${context}: repeat count must be 1-${MAX_INTERVALS}`);
+  }
+  return {
+    count,
+    durationSeconds: durationTextToSeconds(match[2]),
+  };
+}
+
+function expandGenericGroups(groups, label, kind, context) {
+  const timers = [];
+  for (const group of groups) {
+    for (let index = 0; index < group.count; index += 1) {
+      timers.push(
+        validateTimerDslTimer(
+          { label, durationSeconds: group.durationSeconds, kind },
+          `${context}: timer ${timers.length + 1}`,
+        ),
+      );
+    }
+  }
+  return timers;
+}
+
 function parseDslAtom(atom, context) {
   const match = String(atom || "")
     .trim()
     .match(
       new RegExp(
-        `^((?:(?:\\d+(?:\\.\\d+)?)\\s*(?:${TIMER_DSL_DURATION_UNITS})\\s*)+)\\s*:\\s*(.+?)\\s*$`,
+        `^(${TIMER_DSL_DURATION_PATTERN})\\s*:\\s*(.+?)\\s*$`,
         "i",
       ),
     );
