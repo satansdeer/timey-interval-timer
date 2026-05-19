@@ -47,13 +47,11 @@ export const DSL_SYSTEM_PROMPT = [
 ].join(" ");
 export const ACTION_SYSTEM_PROMPT = [
   "You convert natural-language workout timer requests into a Timey action plan.",
-  "The user message keeps the raw request and includes extracted slots for durations, counts, and labels.",
+  "The user message keeps the raw request and includes extracted slots for timer atoms, durations, counts, and labels.",
   "Return only action commands using those slots.",
-  "Use ADD duration label for one timer.",
-  "Use REP count duration label for repeated same-label timers.",
-  "Use BLOCK count duration label duration label for repeated full blocks.",
-  "Use ALT count duration label duration label for total alternating timers.",
-  "Use slot ids exactly, such as D0, C0, and L0. Do not write raw durations, counts, or labels.",
+  "When A atom slots are present, use ADD atom, REP count atom, BLOCK count atom atom, and ALT count atom atom.",
+  "Otherwise use ADD duration label, REP count duration label, BLOCK count duration label duration label, and ALT count duration label duration label.",
+  "Use slot ids exactly, such as A0, D0, C0, and L0. Do not write raw durations, counts, or labels.",
   "Finish with END on its own final line.",
 ].join(" ");
 export const SYSTEM_PROMPT = JSON_SYSTEM_PROMPT;
@@ -113,19 +111,22 @@ export function buildTimerSftExamples({
     includePhase4HResidualData,
     includePhase4IBrowserResidualData,
   })) {
-    if ((userFormat === "natural" || userFormat === "lossless-slots") && spec.correctionRequest) continue;
+    if ((userFormat === "natural" || userFormat === "lossless-slots" || userFormat === "lossless-atoms") && spec.correctionRequest) continue;
 
     const actionSlots =
-      targetFormat === "actions" && userFormat === "lossless-slots" ? extractLosslessActionSlots(spec.request) : null;
+      targetFormat === "actions" && (userFormat === "lossless-slots" || userFormat === "lossless-atoms")
+        ? extractLosslessActionSlots(spec.request, { includeAtoms: userFormat === "lossless-atoms" })
+        : null;
+    const atomActions = userFormat === "lossless-atoms";
     let actionTarget = null;
     if (targetFormat === "actions") {
       try {
-        actionTarget = formatTimerActions(spec.timers, { slots: actionSlots });
+        actionTarget = formatTimerActions(spec.timers, { slots: actionSlots, atomActions });
       } catch (error) {
         if (
-          userFormat === "lossless-slots" &&
+          (userFormat === "lossless-slots" || userFormat === "lossless-atoms") &&
           spec.split === "train" &&
-          /^action slots: missing (?:duration|count|label) slot /.test(error.message)
+          /^action slots: missing (?:atom|duration|count|label) slot /.test(error.message)
         ) {
           continue;
         }
@@ -139,7 +140,7 @@ export function buildTimerSftExamples({
           ? actionTarget.content
           : JSON.stringify({ timers: spec.timers });
     const userContent =
-      userFormat === "natural" || userFormat === "lossless-slots"
+      userFormat === "natural" || userFormat === "lossless-slots" || userFormat === "lossless-atoms"
         ? formatUserContent(spec.request, actionTarget, { userFormat })
         : JSON.stringify({
             ...(spec.payload ?? { correctionRequest: false, userRequest: spec.request }),
@@ -273,8 +274,8 @@ export function validateDatasetRecord(record) {
       throw new Error(`${record.id}: user payload must include correctionRequest boolean`);
     }
   }
-  if (record.userFormat === "lossless-slots" && targetFormat !== "actions") {
-    throw new Error(`${record.id}: lossless-slots user format requires actions target format`);
+  if ((record.userFormat === "lossless-slots" || record.userFormat === "lossless-atoms") && targetFormat !== "actions") {
+    throw new Error(`${record.id}: ${record.userFormat} user format requires actions target format`);
   }
 
   const parsed =
@@ -314,9 +315,9 @@ export function formatTimerDsl(timers, { endToken = false } = {}) {
   return endToken ? `${content}\n${DSL_END_TOKEN}` : content;
 }
 
-export function formatTimerActions(timers, { slots = null } = {}) {
+export function formatTimerActions(timers, { slots = null, atomActions = false } = {}) {
   const slotter = slots ? createActionSlotResolver(slots, "action slots") : createActionSlotter();
-  const commands = formatActionCommands(timers, slotter);
+  const commands = formatActionCommands(timers, slotter, { atomActions });
   return {
     content: [...commands, DSL_END_TOKEN].join("\n"),
     slots: slotter.toJSON(),
@@ -341,10 +342,14 @@ export function parseTimerActions(content, slots, context = "timer actions") {
 
 function formatUserContent(request, actionTarget, { userFormat = "natural" } = {}) {
   if (!actionTarget) return request;
-  const slots =
-    userFormat === "lossless-slots"
-      ? formatLosslessActionSlotsForPrompt(actionTarget.slots)
-      : formatActionSlotsForPrompt(actionTarget.slots);
+  if (userFormat === "lossless-atoms") {
+    return [
+      `Request: ${request}`,
+      `Counts: ${formatLosslessCountSlotsForPrompt(actionTarget.slots)}`,
+      `Atoms: ${formatLosslessAtomSlotsForPrompt(actionTarget.slots)}`,
+    ].join("\n");
+  }
+  const slots = userFormat === "lossless-slots" ? formatLosslessActionSlotsForPrompt(actionTarget.slots) : formatActionSlotsForPrompt(actionTarget.slots);
   return [`Request: ${request}`, `Slots: ${slots}`].join("\n");
 }
 
@@ -366,6 +371,14 @@ function formatLosslessActionSlotsForPrompt(slots) {
   return values.join("; ");
 }
 
+function formatLosslessCountSlotsForPrompt(slots) {
+  return slots.counts.map((slot) => `${slot.id}@${formatSlotLocations(slot)}=${slot.count}`).join("; ") || "none";
+}
+
+function formatLosslessAtomSlotsForPrompt(slots) {
+  return slots.atoms.map((slot) => `${slot.id}@${formatSlotLocations(slot)}=${slot.value}:${slot.label}`).join("; ");
+}
+
 function formatSlotLocations(slot) {
   const spans = slot.spans ?? (slot.span ? [slot.span] : []);
   if (spans.length === 0) return slot.source ?? "default";
@@ -376,9 +389,11 @@ function createActionSlotter() {
   const durations = [];
   const counts = [];
   const labels = [];
+  const atoms = [];
   const durationIds = new Map();
   const countIds = new Map();
   const labelIds = new Map();
+  const atomIds = new Map();
 
   return {
     duration(seconds) {
@@ -407,8 +422,27 @@ function createActionSlotter() {
       }
       return labelIds.get(normalized);
     },
+    atom(timer) {
+      const normalized = normalizeComparableTimer(timer);
+      const label = normalizeActionLabel(normalized.label);
+      const key = `${normalized.durationSeconds}\u0000${label}`;
+      if (!atomIds.has(key)) {
+        const durationId = this.duration(normalized.durationSeconds);
+        const labelId = this.label(label);
+        atomIds.set(key, `A${atoms.length}`);
+        atoms.push({
+          id: atomIds.get(key),
+          durationId,
+          labelId,
+          seconds: normalized.durationSeconds,
+          value: formatCompactDuration(normalized.durationSeconds),
+          label,
+        });
+      }
+      return atomIds.get(key);
+    },
     toJSON() {
-      return { durations, counts, labels };
+      return { durations, counts, labels, atoms };
     },
   };
 }
@@ -417,9 +451,11 @@ function createActionSlotResolver(slots, context) {
   const durations = normalizeLosslessSlotList(slots.durations, "durations", context);
   const counts = normalizeLosslessSlotList(slots.counts, "counts", context);
   const labels = normalizeLosslessSlotList(slots.labels, "labels", context);
+  const atoms = normalizeLosslessSlotList(slots.atoms ?? [], "atoms", context);
   const durationIds = new Map();
   const countIds = new Map();
   const labelIds = new Map();
+  const atomIds = new Map();
 
   for (const slot of durations) {
     const key = String(Number(slot.seconds));
@@ -432,6 +468,10 @@ function createActionSlotResolver(slots, context) {
   for (const slot of labels) {
     const key = normalizeActionLabel(slot.label);
     if (!labelIds.has(key)) labelIds.set(key, slot.id);
+  }
+  for (const slot of atoms) {
+    const key = `${Number(slot.seconds)}\u0000${normalizeActionLabel(slot.label)}`;
+    if (!atomIds.has(key)) atomIds.set(key, slot.id);
   }
 
   return {
@@ -450,8 +490,20 @@ function createActionSlotResolver(slots, context) {
       if (!id) throw new Error(`${context}: missing label slot for ${JSON.stringify(normalizeActionLabel(label))}`);
       return id;
     },
+    atom(timer) {
+      const normalized = normalizeComparableTimer(timer);
+      const id = atomIds.get(`${Number(normalized.durationSeconds)}\u0000${normalizeActionLabel(normalized.label)}`);
+      if (!id) {
+        throw new Error(
+          `${context}: missing atom slot for ${formatCompactDuration(Number(normalized.durationSeconds))}:${JSON.stringify(
+            normalizeActionLabel(normalized.label),
+          )}`,
+        );
+      }
+      return id;
+    },
     toJSON() {
-      return { durations, counts, labels };
+      return { durations, counts, labels, atoms };
     },
   };
 }
@@ -468,7 +520,7 @@ function normalizeActionLabel(label) {
   return isNumberedGenericTimerLabel(label) ? "Timer" : String(label);
 }
 
-export function extractLosslessActionSlots(request) {
+export function extractLosslessActionSlots(request, { includeAtoms = false } = {}) {
   const source = String(request ?? "");
   const durationCandidates = extractDurationCandidates(source);
   const durations = mergeDurationCandidates(durationCandidates);
@@ -495,8 +547,10 @@ export function extractLosslessActionSlots(request) {
   assignSlotIds(durations, "D");
   assignSlotIds(counts, "C");
   assignSlotIds(labels, "L");
+  const atoms = includeAtoms ? buildLosslessAtomSlots(source, durations, labels) : [];
+  assignSlotIds(atoms, "A");
 
-  return { durations, counts, labels };
+  return { durations, counts, labels, atoms };
 }
 
 const SIMPLE_NUMBER_WORD_VALUES = {
@@ -807,6 +861,160 @@ function defaultLabelSlot(label, source = "default") {
   };
 }
 
+function buildLosslessAtomSlots(source, durations, labels) {
+  const atoms = [];
+  const byKey = new Map();
+  const timerLabel = labels.find((slot) => slot.label === "Timer");
+  const workoutLabels = labels.filter((slot) => isWorkoutAtomLabel(slot.label) && hasUsefulWorkoutAtomSignal(source, slot));
+  const endpointLabels = labels.filter((slot) => isEndpointAtomLabel(slot.label));
+  const explicitLabels = labels.filter((slot) => !isWorkoutAtomLabel(slot.label) && !isEndpointAtomLabel(slot.label) && slot.label !== "Timer");
+  const explicitDurations = durations.filter((slot) => (slot.spans?.length ?? 0) > 0);
+  const explicitSmallDurations = explicitDurations.filter((slot) => slot.seconds <= 180);
+  const defaultSmallDurations = durations.filter((slot) => slot.seconds <= 180 && (slot.spans?.length ?? 0) === 0);
+
+  addExplicitColonAtomCandidates(source, durations, labels, atoms, byKey);
+
+  if (timerLabel) {
+    const timerDurations = explicitDurations.length ? explicitDurations : durations;
+    for (const duration of timerDurations) addAtomCandidate(atoms, byKey, duration, timerLabel, "generic");
+  }
+
+  for (const label of endpointLabels) {
+    for (const duration of nearestDurationSlots(label, explicitDurations, 1, { maxDistance: 25 })) {
+      addAtomCandidate(atoms, byKey, duration, label, "nearby");
+    }
+  }
+
+  for (const label of explicitLabels) {
+    for (const duration of nearestDurationSlots(label, explicitDurations, 1, { maxDistance: 30 })) {
+      addAtomCandidate(atoms, byKey, duration, label, "nearby");
+    }
+  }
+
+  for (const label of workoutLabels) {
+    const nearbyDurations = label.spans?.length ? nearestDurationSlots(label, explicitSmallDurations, 1, { maxDistance: 25 }) : [];
+    const fallbackDurations = explicitSmallDurations.length ? explicitSmallDurations : defaultSmallDurations;
+    const selectedDurations = nearbyDurations.length ? nearbyDurations : fallbackDurations;
+    for (const duration of selectedDurations) {
+      addAtomCandidate(atoms, byKey, duration, label, duration.spans?.length ? "workout" : "default-workout");
+    }
+  }
+
+  const defaultLabel = labels.find((slot) => slot.label === "Timer");
+  if (defaultLabel && atoms.length === 0) {
+    for (const duration of durations) addAtomCandidate(atoms, byKey, duration, defaultLabel, "fallback");
+  }
+
+  return atoms.sort(compareCandidateLocations);
+}
+
+function addExplicitColonAtomCandidates(source, durations, labels, atoms, byKey) {
+  for (const duration of durations) {
+    for (const span of duration.spans ?? []) {
+      const colonSearch = source.slice(span.end, span.end + 4);
+      const colonOffset = colonSearch.indexOf(":");
+      if (colonOffset < 0) continue;
+      if (source.slice(span.end, span.end + colonOffset).trim()) continue;
+
+      const colonIndex = span.end + colonOffset;
+      const labelMatch = source.slice(colonIndex + 1).match(/^\s*([^,;/\n]+?)(?=\s*(?:,|;|\/|\n|$|\bthen\b))/i);
+      if (!labelMatch) continue;
+      const raw = labelMatch[1].trim();
+      if (!raw || raw.includes(":")) continue;
+
+      const leadingWhitespace = labelMatch[0].indexOf(labelMatch[1]);
+      const labelStart = colonIndex + 1 + leadingWhitespace;
+      const labelEnd = labelStart + raw.length;
+      const label = findLabelSlotForSpan(labels, labelStart, labelEnd, raw);
+      if (!label) continue;
+      addAtomCandidate(atoms, byKey, { ...duration, spans: [span], span }, { ...label, spans: [{ start: labelStart, end: labelEnd }], span: { start: labelStart, end: labelEnd } }, "colon");
+    }
+  }
+}
+
+function findLabelSlotForSpan(labels, start, end, raw) {
+  const exact = labels.find((label) => (label.spans ?? []).some((span) => span.start === start && span.end === end));
+  if (exact) return exact;
+  const normalized = normalizeActionLabel(raw.trim().replace(/\s+/g, " "));
+  return labels.find((label) => normalizeActionLabel(label.label) === normalized) ?? null;
+}
+
+function addAtomCandidate(atoms, byKey, duration, label, source) {
+  const key = `${Number(duration.seconds)}\u0000${normalizeActionLabel(label.label)}`;
+  const spans = [...(duration.spans ?? []), ...(label.spans ?? [])]
+    .filter(Boolean)
+    .sort((left, right) => left.start - right.start || left.end - right.end);
+  const existing = byKey.get(key);
+  if (existing) {
+    for (const span of spans) {
+      if (!existing.spans.some((known) => spansEqual(known, span))) existing.spans.push(span);
+    }
+    if (!existing.sources.includes(source)) existing.sources.push(source);
+    existing.spans.sort((left, right) => left.start - right.start || left.end - right.end);
+    existing.span = existing.spans[0] ?? null;
+    return existing;
+  }
+  const atom = {
+    durationId: duration.id,
+    labelId: label.id,
+    seconds: Number(duration.seconds),
+    value: duration.value ?? formatCompactDuration(Number(duration.seconds)),
+    label: normalizeActionLabel(label.label),
+    span: spans[0] ?? null,
+    spans,
+    source,
+    sources: [source],
+  };
+  byKey.set(key, atom);
+  atoms.push(atom);
+  return atom;
+}
+
+function nearestDurationSlots(label, durations, limit, { maxDistance = 80 } = {}) {
+  if (!label.spans?.length) return [];
+  return durations
+    .map((duration) => ({
+      duration,
+      distance: closestSpanDistance(label.spans, duration.spans ?? []),
+    }))
+    .filter((entry) => Number.isFinite(entry.distance) && entry.distance <= maxDistance)
+    .sort((left, right) => left.distance - right.distance || compareCandidateLocations(left.duration, right.duration))
+    .slice(0, limit)
+    .map((entry) => entry.duration);
+}
+
+function closestSpanDistance(leftSpans, rightSpans) {
+  let best = Number.POSITIVE_INFINITY;
+  for (const left of leftSpans) {
+    for (const right of rightSpans) {
+      const distance = spanDistance(left, right);
+      if (distance < best) best = distance;
+    }
+  }
+  return best;
+}
+
+function spanDistance(left, right) {
+  if (spansOverlap(left, right)) return 0;
+  return left.end <= right.start ? right.start - left.end : left.start - right.end;
+}
+
+function isWorkoutAtomLabel(label) {
+  return ["Work", "Rest", "Hard", "Easy", "High intensity", "Low intensity", "Recovery", "Recover", "Hard effort", "Easy spin"].includes(label);
+}
+
+function isEndpointAtomLabel(label) {
+  return ["Warmup", "Cooldown", "Warmdown"].includes(label);
+}
+
+function hasUsefulWorkoutAtomSignal(source, label) {
+  if ((label.spans?.length ?? 0) > 0) return true;
+  if (label.source !== "paired-default") return false;
+  return /\b(?:alternat(?:e|ing|ions?)|intervals?|middle|start with|starting with|sets?|pairs?|rounds?|cycles?)\b|work\s*\/\s*rest|rest\s*\/\s*work|work\s*-\s*rest|rest\s*-\s*work/i.test(
+    source,
+  );
+}
+
 function assignSlotIds(slots, prefix) {
   slots.forEach((slot, index) => {
     slot.id = `${prefix}${index}`;
@@ -878,39 +1086,38 @@ function parseNumberPhrase(value) {
   return null;
 }
 
-function formatActionCommands(timers, slotter) {
+function formatActionCommands(timers, slotter, options = {}) {
   const hint = TIMER_DSL_HINTS.get(timers);
   if (hint?.type === "withEndpoints") {
     return [
-      formatAddAction(timers[0], slotter),
-      ...formatActionHint(hint.middleHint, slotter),
-      formatAddAction(timers[timers.length - 1], slotter),
+      formatAddAction(timers[0], slotter, options),
+      ...formatActionHint(hint.middleHint, slotter, options),
+      formatAddAction(timers[timers.length - 1], slotter, options),
     ];
   }
-  if (hint) return formatActionHint(hint, slotter);
-  return formatActionRuns(timers, slotter);
+  if (hint) return formatActionHint(hint, slotter, options);
+  return formatActionRuns(timers, slotter, options);
 }
 
-function formatActionHint(hint, slotter) {
+function formatActionHint(hint, slotter, options = {}) {
   if (!hint) return [];
   if (hint.type === "alt") {
-    if (hint.count === 1) return [`ADD ${formatActionAtom(hint.atoms[0], slotter)}`];
-    return [`ALT ${slotter.count(hint.count)} ${hint.atoms.map((atom) => formatActionAtom(atom, slotter)).join(" ")}`];
+    if (hint.count === 1) return [`ADD ${formatActionAtom(hint.atoms[0], slotter, options)}`];
+    return [`ALT ${slotter.count(hint.count)} ${hint.atoms.map((atom) => formatActionAtom(atom, slotter, options)).join(" ")}`];
   }
   if (hint.type === "block") {
-    return [`BLOCK ${slotter.count(hint.count)} ${hint.atoms.map((atom) => formatActionAtom(atom, slotter)).join(" ")}`];
+    return [`BLOCK ${slotter.count(hint.count)} ${hint.atoms.map((atom) => formatActionAtom(atom, slotter, options)).join(" ")}`];
   }
   if (hint.type === "generic") {
     return hint.groups.map(([count, seconds]) => {
-      const duration = slotter.duration(seconds);
-      const label = slotter.label("Timer");
-      return count > 1 ? `REP ${slotter.count(count)} ${duration} ${label}` : `ADD ${duration} ${label}`;
+      const atom = formatActionAtom(timer("Timer", seconds, "other"), slotter, options);
+      return count > 1 ? `REP ${slotter.count(count)} ${atom}` : `ADD ${atom}`;
     });
   }
   return [];
 }
 
-function formatActionRuns(timers, slotter) {
+function formatActionRuns(timers, slotter, options = {}) {
   const commands = [];
   for (let index = 0; index < timers.length; ) {
     const current = normalizeComparableTimer(timers[index]);
@@ -918,23 +1125,24 @@ function formatActionRuns(timers, slotter) {
     while (index + count < timers.length && areSameTimer(current, timers[index + count])) {
       count += 1;
     }
-    commands.push(count > 1 ? formatRepeatAction(count, current, slotter) : formatAddAction(current, slotter));
+    commands.push(count > 1 ? formatRepeatAction(count, current, slotter, options) : formatAddAction(current, slotter, options));
     index += count;
   }
   return commands;
 }
 
-function formatActionAtom(timer, slotter) {
+function formatActionAtom(timer, slotter, { atomActions = false } = {}) {
   const normalized = normalizeComparableTimer(timer);
+  if (atomActions) return slotter.atom(normalized);
   return `${slotter.duration(normalized.durationSeconds)} ${slotter.label(normalized.label)}`;
 }
 
-function formatAddAction(timer, slotter) {
-  return `ADD ${formatActionAtom(timer, slotter)}`;
+function formatAddAction(timer, slotter, options = {}) {
+  return `ADD ${formatActionAtom(timer, slotter, options)}`;
 }
 
-function formatRepeatAction(count, timer, slotter) {
-  return `REP ${slotter.count(count)} ${formatActionAtom(timer, slotter)}`;
+function formatRepeatAction(count, timer, slotter, options = {}) {
+  return `REP ${slotter.count(count)} ${formatActionAtom(timer, slotter, options)}`;
 }
 
 function createActionSlotMaps(slots, context) {
@@ -942,7 +1150,8 @@ function createActionSlotMaps(slots, context) {
   const durations = new Map((slots.durations ?? []).map((slot) => [slot.id, slot]));
   const counts = new Map((slots.counts ?? []).map((slot) => [slot.id, slot]));
   const labels = new Map((slots.labels ?? []).map((slot) => [slot.id, slot]));
-  return { durations, counts, labels };
+  const atoms = new Map((slots.atoms ?? []).map((slot) => [slot.id, slot]));
+  return { durations, counts, labels, atoms };
 }
 
 function compileActionTokens(tokens, slots, context) {
@@ -952,37 +1161,61 @@ function compileActionTokens(tokens, slots, context) {
     const commandContext = `${context}: command ${lines.length + 1}`;
     const op = tokens[index]?.toUpperCase();
     if (op === "ADD") {
-      const args = tokens.slice(index + 1, index + 3);
-      if (args.length !== 2) throw new Error(`${commandContext}: ADD requires duration and label`);
-      lines.push(`${resolveActionDuration(args[0], slots, commandContext)}: ${resolveActionLabel(args[1], slots, commandContext)}`);
-      index += 3;
+      const first = tokens[index + 1];
+      if (isActionAtomId(first)) {
+        if (!first) throw new Error(`${commandContext}: ADD requires atom`);
+        lines.push(resolveActionAtom(first, slots, commandContext));
+        index += 2;
+      } else {
+        const args = tokens.slice(index + 1, index + 3);
+        if (args.length !== 2) throw new Error(`${commandContext}: ADD requires duration and label`);
+        lines.push(`${resolveActionDuration(args[0], slots, commandContext)}: ${resolveActionLabel(args[1], slots, commandContext)}`);
+        index += 3;
+      }
       continue;
     }
     if (op === "REP") {
-      const args = tokens.slice(index + 1, index + 4);
-      if (args.length !== 3) throw new Error(`${commandContext}: REP requires count, duration, and label`);
-      lines.push(
-        `${resolveActionCount(args[0], slots, commandContext)}x ${resolveActionDuration(args[1], slots, commandContext)}: ${resolveActionLabel(
-          args[2],
-          slots,
-          commandContext,
-        )}`,
-      );
-      index += 4;
+      const count = tokens[index + 1];
+      const first = tokens[index + 2];
+      if (isActionAtomId(first)) {
+        if (!count || !first) throw new Error(`${commandContext}: REP requires count and atom`);
+        lines.push(`${resolveActionCount(count, slots, commandContext)}x ${resolveActionAtom(first, slots, commandContext)}`);
+        index += 3;
+      } else {
+        const args = tokens.slice(index + 1, index + 4);
+        if (args.length !== 3) throw new Error(`${commandContext}: REP requires count, duration, and label`);
+        lines.push(
+          `${resolveActionCount(args[0], slots, commandContext)}x ${resolveActionDuration(args[1], slots, commandContext)}: ${resolveActionLabel(
+            args[2],
+            slots,
+            commandContext,
+          )}`,
+        );
+        index += 4;
+      }
       continue;
     }
     if (op === "ALT" || op === "BLOCK") {
-      const args = tokens.slice(index + 1, index + 6);
-      if (args.length !== 5) throw new Error(`${commandContext}: ${op} requires count and two duration-label atoms`);
-      const prefix = op === "ALT" ? `${resolveActionCount(args[0], slots, commandContext)}alt` : `${resolveActionCount(args[0], slots, commandContext)}x`;
-      lines.push(
-        `${prefix} ${resolveActionDuration(args[1], slots, commandContext)}: ${resolveActionLabel(
-          args[2],
-          slots,
-          commandContext,
-        )} | ${resolveActionDuration(args[3], slots, commandContext)}: ${resolveActionLabel(args[4], slots, commandContext)}`,
-      );
-      index += 6;
+      const count = tokens[index + 1];
+      const first = tokens[index + 2];
+      const second = tokens[index + 3];
+      const prefix = op === "ALT" ? `${resolveActionCount(count, slots, commandContext)}alt` : `${resolveActionCount(count, slots, commandContext)}x`;
+      if (isActionAtomId(first)) {
+        if (!count || !first || !second) throw new Error(`${commandContext}: ${op} requires count and two atoms`);
+        lines.push(`${prefix} ${resolveActionAtom(first, slots, commandContext)} | ${resolveActionAtom(second, slots, commandContext)}`);
+        index += 4;
+      } else {
+        const args = tokens.slice(index + 1, index + 6);
+        if (args.length !== 5) throw new Error(`${commandContext}: ${op} requires count and two duration-label atoms`);
+        lines.push(
+          `${prefix} ${resolveActionDuration(args[1], slots, commandContext)}: ${resolveActionLabel(
+            args[2],
+            slots,
+            commandContext,
+          )} | ${resolveActionDuration(args[3], slots, commandContext)}: ${resolveActionLabel(args[4], slots, commandContext)}`,
+        );
+        index += 6;
+      }
       continue;
     }
     throw new Error(`${commandContext}: invalid action op ${JSON.stringify(tokens[index])}`);
@@ -992,6 +1225,16 @@ function compileActionTokens(tokens, slots, context) {
 
 function cleanActionToken(token) {
   return token.replace(/^[,:\[\](){}]+|[,:\[\](){}]+$/g, "");
+}
+
+function isActionAtomId(token) {
+  return /^A\d+$/i.test(String(token ?? ""));
+}
+
+function resolveActionAtom(id, slots, context) {
+  const slot = slots.atoms.get(id);
+  if (!slot) throw new Error(`${context}: unknown atom slot ${id}`);
+  return `${slot.value ?? formatCompactDuration(slot.seconds)}: ${slot.label}`;
 }
 
 function resolveActionDuration(id, slots, context) {
@@ -1283,7 +1526,7 @@ function addPairSpecs(add) {
           `Warmup ${warmupMinutes} min, then ${count} alternating ${noun} of ${duration} rest and ${duration} work, then ${cooldownMinutes} min cooldown`,
           `Give me a ${warmupMinutes} minute warmup and ${cooldownMinutes} minute cooldown with ${count} ${noun} of ${duration} hard then ${duration} rest`,
           `${wordOrNumber(count, variant)} ${noun}: ${duration} work, ${duration} recovery, after ${warmupMinutes} min warmup and before ${cooldownMinutes} min cooldown`,
-          `Start with ${warmupMinutes} minutes warm up, do ${count} ${noun} each containing ${duration} easy and ${duration} hard, finish with ${cooldownMinutes} minutes cool down`,
+          `Start with ${warmupMinutes} minutes warm up, do ${count} ${noun} each containing ${duration} hard and ${duration} easy, finish with ${cooldownMinutes} minutes cool down`,
         ];
         const order = variant % 2 === 0 ? ["rest", "work"] : ["work", "rest"];
         const labels = templates[variant % templates.length].includes("hard") ? hardEasyLabels() : workRestLabels();
@@ -3495,8 +3738,8 @@ function stableHash(value) {
 }
 
 function assertUserFormat(userFormat) {
-  if (!["app", "natural", "lossless-slots"].includes(userFormat)) {
-    throw new Error(`Unknown user format "${userFormat}". Use "app", "natural", or "lossless-slots".`);
+  if (!["app", "natural", "lossless-slots", "lossless-atoms"].includes(userFormat)) {
+    throw new Error(`Unknown user format "${userFormat}". Use "app", "natural", "lossless-slots", or "lossless-atoms".`);
   }
 }
 

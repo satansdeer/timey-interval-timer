@@ -1594,6 +1594,92 @@ Conclusion:
   - separate value binding from structural action prediction in two constrained
     decode passes
 
+### Phase 4L: Lossless Atom Actions
+
+Status: completed experiment 2026-05-19; not browser promoted.
+
+Artifact:
+
+- `training/eval-runs/phase4l-lossless-atoms/README.md`
+
+Goal:
+
+Reduce Phase 4K's global duration/label slot burden by pre-binding source-backed
+timer atoms while preserving the raw request. The model predicts structure plus
+atom ids instead of separate duration and label ids.
+
+Example input:
+
+```text
+Request: first and last timer 5minute, 5 one minute timers in between
+Counts: C0@30:31=5
+Atoms: A0@21:28=5m:Timer; A1@32:42=1m:Timer
+```
+
+Example target:
+
+```text
+ADD A0
+REP C0 A1
+ADD A0
+END
+```
+
+Implemented:
+
+- Added `--user-format lossless-atoms`.
+- Extended lossless slot extraction with atom candidates.
+- Extended action formatting and parsing with `ADD/REP/ALT/BLOCK` atom forms.
+- Added a regression test for atom prompts and atom action parsing.
+- Fixed one contradictory synthetic pair template so text order matches target
+  order.
+
+Dataset:
+
+- Directory: `training/generated-actions-lossless-atoms-phase4i/`
+- Train rows: 1501
+- Validation rows: 207
+- Hard validation rows: 62
+- Validation + hard atom count stats:
+  - min: 1
+  - median: 6
+  - p90: 8
+  - p95: 8
+  - max: 15
+  - average: 5.53
+
+Runs:
+
+| Run | Source | Best step | Strict | Parseable | Semantic-invalid | Result |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| `phase4l-actions-lossless-atoms-base-lr3e-4` | `google/t5-efficient-tiny` | 1000 | 156/207 | 206/207 | 0/207 | first atom prototype |
+| `phase4l-actions-lossless-atoms-tight-base-lr3e-4` | `google/t5-efficient-tiny` | 1000 | 158/207 | 206/207 | 0/207 | selected base atom dataset |
+| `phase4l-actions-lossless-atoms-tighter-base-lr3e-4` | `google/t5-efficient-tiny` | 1000 | 138/207 | 207/207 | 0/207 | same-span alias pruning backfired |
+| `phase4l-actions-lossless-atoms-regexcue-base-lr3e-4` | `google/t5-efficient-tiny` | 1000 | 149/207 | 207/207 | 0/207 | stricter implicit cue pruning backfired |
+| `phase4l-actions-lossless-atoms-tight-cleanup-lr5e-5` | tight checkpoint-1000 | 100 | 163/207 | 206/207 | 0/207 | selected checkpoint |
+
+Hard validation:
+
+- Base tight checkpoint-1000: 44/62 strict, 62/62 parseable, 0 semantic-invalid.
+- Cleanup checkpoint-100: 46/62 strict, 62/62 parseable, 0 semantic-invalid.
+
+Selected checkpoint:
+
+`training/seq2seq-runs/phase4l-actions-lossless-atoms-tight-cleanup-lr5e-5/checkpoint-100`
+
+Conclusion:
+
+- Atom actions are a real recovery over Phase 4K: `count-pairs` improved from
+  0/22 to 22/22.
+- Atom actions remain below oracle action slots from Phase 4J
+  (`163/207` vs `190-191/207`), mostly because arbitrary explicit label copying
+  is still weak.
+- More prompt pruning is not automatically beneficial. Cleaner atom menus from
+  same-span alias pruning and stricter implicit cues reduced accuracy.
+- Do not promote Phase 4L to browser yet. Next high-value model-language idea is
+  a direct sequence command such as `SEQ A0 A1 A2`, plus more explicit-label-copy
+  data.
+
 ### Phase 5: Quantization-Aware Continuation
 
 Status: pending, only do this if Phase 2 int4/mixed quantization causes useful

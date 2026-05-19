@@ -73,4 +73,25 @@ assert.deepEqual(
   [],
 );
 
+const losslessAtomRecords = buildTimerSftExamples({
+  targetFormat: "actions",
+  userFormat: "lossless-atoms",
+  includePhase4HardData: true,
+  includeUserRequestExpansion: true,
+});
+const losslessAtomRecord = losslessAtomRecords.find(
+  (record) => record.metadata.userRequest === "first and last timer 5minute, 5 one minute timers in between",
+);
+assert.ok(losslessAtomRecord);
+assert.match(losslessAtomRecord.messages[1].content, /^Request: first and last timer 5minute, 5 one minute timers in between\nCounts: /);
+assert.match(losslessAtomRecord.messages[1].content, /Atoms: A0@21:28=5m:Timer; A1@32:42=1m:Timer/);
+assert.equal(losslessAtomRecord.messages[2].content, "ADD A0\nREP C0 A1\nADD A0\nEND");
+assert.deepEqual(
+  compareTimerOutputs(
+    losslessAtomRecord.metadata.expectedTimers,
+    parseTimerActions(losslessAtomRecord.messages[2].content, losslessAtomRecord.metadata.actionSlots).timers,
+  ),
+  [],
+);
+
 console.log("training action target tests passed");
