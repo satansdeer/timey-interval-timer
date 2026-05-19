@@ -45,9 +45,21 @@ export const DSL_SYSTEM_PROMPT = [
   "Use Timer as the label for repeated generic timers; do not number generic timer labels.",
   "Use only the request and supplied correction context. Do not copy defaults.",
 ].join(" ");
+export const ACTION_SYSTEM_PROMPT = [
+  "You convert natural-language workout timer requests into a Timey action plan.",
+  "The user message includes extracted slots for durations, counts, and labels.",
+  "Return only action commands using those slots.",
+  "Use ADD duration label for one timer.",
+  "Use REP count duration label for repeated same-label timers.",
+  "Use BLOCK count duration label duration label for repeated full blocks.",
+  "Use ALT count duration label duration label for total alternating timers.",
+  "Use slot ids exactly, such as D0, C0, and L0. Do not write raw durations, counts, or labels.",
+  "Finish with END on its own final line.",
+].join(" ");
 export const SYSTEM_PROMPT = JSON_SYSTEM_PROMPT;
 export const QWEN3_NO_THINK_SYSTEM_PROMPT = `${SYSTEM_PROMPT} /no_think`;
 export const QWEN3_DSL_NO_THINK_SYSTEM_PROMPT = `${DSL_SYSTEM_PROMPT} /no_think`;
+export const QWEN3_ACTION_NO_THINK_SYSTEM_PROMPT = `${ACTION_SYSTEM_PROMPT} /no_think`;
 
 const TIMER_DSL_HINTS = new WeakMap();
 const WORD_NUMBERS = {
@@ -88,7 +100,8 @@ export function buildTimerSftExamples({
 
   const records = [];
   const seen = new Set();
-  const baseSystemPrompt = systemPrompt ?? (targetFormat === "dsl" ? DSL_SYSTEM_PROMPT : JSON_SYSTEM_PROMPT);
+  const baseSystemPrompt =
+    systemPrompt ?? (targetFormat === "dsl" ? DSL_SYSTEM_PROMPT : targetFormat === "actions" ? ACTION_SYSTEM_PROMPT : JSON_SYSTEM_PROMPT);
   const resolvedSystemPrompt =
     targetFormat === "dsl" && dslEndToken
       ? `${baseSystemPrompt} Finish with ${DSL_END_TOKEN} on its own final line.`
@@ -102,14 +115,20 @@ export function buildTimerSftExamples({
   })) {
     if (userFormat === "natural" && spec.correctionRequest) continue;
 
+    const actionTarget = targetFormat === "actions" ? formatTimerActions(spec.timers) : null;
     const assistantContent =
       targetFormat === "dsl"
         ? formatTimerDsl(spec.timers, { endToken: dslEndToken })
-        : JSON.stringify({ timers: spec.timers });
+        : targetFormat === "actions"
+          ? actionTarget.content
+          : JSON.stringify({ timers: spec.timers });
     const userContent =
       userFormat === "natural"
-        ? spec.request
-        : JSON.stringify(spec.payload ?? { correctionRequest: false, userRequest: spec.request });
+        ? formatUserContent(spec.request, actionTarget)
+        : JSON.stringify({
+            ...(spec.payload ?? { correctionRequest: false, userRequest: spec.request }),
+            ...(actionTarget ? { actionSlots: actionTarget.slots } : {}),
+          });
     const duplicateKey = `${userContent}\n${assistantContent}`;
     if (seen.has(duplicateKey) && !spec.duplicateOk) continue;
     seen.add(duplicateKey);
@@ -131,6 +150,7 @@ export function buildTimerSftExamples({
       metadata: {
         userRequest: spec.request,
         expectedTimers: spec.timers,
+        ...(actionTarget ? { actionSlots: actionTarget.slots } : {}),
         ...(spec.source ? { source: spec.source } : {}),
         ...(spec.sourceCategory ? { sourceCategory: spec.sourceCategory } : {}),
         ...(spec.hardValidation ? { hardValidation: true } : {}),
@@ -213,13 +233,14 @@ export function validateDatasetRecord(record) {
     throw new Error(`${record.id}: message roles must be system, user, assistant`);
   }
   const targetFormat = record.targetFormat ?? "json";
-  if (!["json", "dsl"].includes(targetFormat)) {
+  if (!["json", "dsl", "actions"].includes(targetFormat)) {
     throw new Error(`${record.id}: invalid targetFormat ${JSON.stringify(targetFormat)}`);
   }
   if (
     typeof system.content !== "string" ||
     (targetFormat === "json" && !system.content.includes("Return only JSON")) ||
-    (targetFormat === "dsl" && !system.content.includes("duration: label"))
+    (targetFormat === "dsl" && !system.content.includes("duration: label")) ||
+    (targetFormat === "actions" && !system.content.includes("action commands"))
   ) {
     throw new Error(`${record.id}: system prompt is missing target format instruction`);
   }
@@ -240,6 +261,8 @@ export function validateDatasetRecord(record) {
   const parsed =
     targetFormat === "dsl"
       ? parseTimerDsl(assistant.content, `${record.id}: assistant content`)
+      : targetFormat === "actions"
+        ? parseTimerActions(assistant.content, record.metadata?.actionSlots, `${record.id}: assistant content`)
       : parseTimerJson(assistant.content, `${record.id}: assistant content`);
   if (record.metadata?.expectedTimers) {
     const errors = compareTimerOutputs(record.metadata.expectedTimers, parsed.timers, {
@@ -270,6 +293,223 @@ export function parseTimerJson(content, context = "timer JSON") {
 export function formatTimerDsl(timers, { endToken = false } = {}) {
   const content = formatCompressedTimerDsl(timers);
   return endToken ? `${content}\n${DSL_END_TOKEN}` : content;
+}
+
+export function formatTimerActions(timers) {
+  const slotter = createActionSlotter();
+  const commands = formatActionCommands(timers, slotter);
+  return {
+    content: [...commands, DSL_END_TOKEN].join("\n"),
+    slots: slotter.toJSON(),
+  };
+}
+
+export function parseTimerActions(content, slots, context = "timer actions") {
+  const source = String(content ?? "").trim();
+  if (!source) throw new Error(`${context}: empty action plan`);
+  const slotMaps = createActionSlotMaps(slots, context);
+  const tokens = source
+    .split(/\s+|;/)
+    .map(cleanActionToken)
+    .filter(Boolean)
+    .filter((token) => !/^(BEGIN|SEQ)$/i.test(token))
+    .filter((token) => !new RegExp(`^${DSL_END_TOKEN}$`, "i").test(token));
+
+  if (tokens.length < 1) throw new Error(`${context}: no action commands`);
+  const dslLines = compileActionTokens(tokens, slotMaps, context);
+  return parseTimerDsl(dslLines.join("\n"), context);
+}
+
+function formatUserContent(request, actionTarget) {
+  if (!actionTarget) return request;
+  return [`Request: ${request}`, `Slots: ${formatActionSlotsForPrompt(actionTarget.slots)}`].join("\n");
+}
+
+function formatActionSlotsForPrompt(slots) {
+  const values = [
+    ...slots.durations.map((slot) => `${slot.id}=${slot.value}`),
+    ...slots.counts.map((slot) => `${slot.id}=${slot.count}`),
+    ...slots.labels.map((slot) => `${slot.id}=${slot.label}`),
+  ];
+  return values.join("; ");
+}
+
+function createActionSlotter() {
+  const durations = [];
+  const counts = [];
+  const labels = [];
+  const durationIds = new Map();
+  const countIds = new Map();
+  const labelIds = new Map();
+
+  return {
+    duration(seconds) {
+      const normalized = Number(seconds);
+      const key = String(normalized);
+      if (!durationIds.has(key)) {
+        durationIds.set(key, `D${durations.length}`);
+        durations.push({ id: durationIds.get(key), seconds: normalized, value: formatCompactDuration(normalized) });
+      }
+      return durationIds.get(key);
+    },
+    count(count) {
+      const normalized = Number(count);
+      const key = String(normalized);
+      if (!countIds.has(key)) {
+        countIds.set(key, `C${counts.length}`);
+        counts.push({ id: countIds.get(key), count: normalized });
+      }
+      return countIds.get(key);
+    },
+    label(label) {
+      const normalized = normalizeActionLabel(label);
+      if (!labelIds.has(normalized)) {
+        labelIds.set(normalized, `L${labels.length}`);
+        labels.push({ id: labelIds.get(normalized), label: normalized });
+      }
+      return labelIds.get(normalized);
+    },
+    toJSON() {
+      return { durations, counts, labels };
+    },
+  };
+}
+
+function normalizeActionLabel(label) {
+  return isNumberedGenericTimerLabel(label) ? "Timer" : String(label);
+}
+
+function formatActionCommands(timers, slotter) {
+  const hint = TIMER_DSL_HINTS.get(timers);
+  if (hint?.type === "withEndpoints") {
+    return [
+      formatAddAction(timers[0], slotter),
+      ...formatActionHint(hint.middleHint, slotter),
+      formatAddAction(timers[timers.length - 1], slotter),
+    ];
+  }
+  if (hint) return formatActionHint(hint, slotter);
+  return formatActionRuns(timers, slotter);
+}
+
+function formatActionHint(hint, slotter) {
+  if (!hint) return [];
+  if (hint.type === "alt") {
+    return [`ALT ${slotter.count(hint.count)} ${hint.atoms.map((atom) => formatActionAtom(atom, slotter)).join(" ")}`];
+  }
+  if (hint.type === "block") {
+    return [`BLOCK ${slotter.count(hint.count)} ${hint.atoms.map((atom) => formatActionAtom(atom, slotter)).join(" ")}`];
+  }
+  if (hint.type === "generic") {
+    return hint.groups.map(([count, seconds]) => {
+      const duration = slotter.duration(seconds);
+      const label = slotter.label("Timer");
+      return count > 1 ? `REP ${slotter.count(count)} ${duration} ${label}` : `ADD ${duration} ${label}`;
+    });
+  }
+  return [];
+}
+
+function formatActionRuns(timers, slotter) {
+  const commands = [];
+  for (let index = 0; index < timers.length; ) {
+    const current = normalizeComparableTimer(timers[index]);
+    let count = 1;
+    while (index + count < timers.length && areSameTimer(current, timers[index + count])) {
+      count += 1;
+    }
+    commands.push(count > 1 ? formatRepeatAction(count, current, slotter) : formatAddAction(current, slotter));
+    index += count;
+  }
+  return commands;
+}
+
+function formatActionAtom(timer, slotter) {
+  const normalized = normalizeComparableTimer(timer);
+  return `${slotter.duration(normalized.durationSeconds)} ${slotter.label(normalized.label)}`;
+}
+
+function formatAddAction(timer, slotter) {
+  return `ADD ${formatActionAtom(timer, slotter)}`;
+}
+
+function formatRepeatAction(count, timer, slotter) {
+  return `REP ${slotter.count(count)} ${formatActionAtom(timer, slotter)}`;
+}
+
+function createActionSlotMaps(slots, context) {
+  if (!slots || typeof slots !== "object") throw new Error(`${context}: missing action slots`);
+  const durations = new Map((slots.durations ?? []).map((slot) => [slot.id, slot]));
+  const counts = new Map((slots.counts ?? []).map((slot) => [slot.id, slot]));
+  const labels = new Map((slots.labels ?? []).map((slot) => [slot.id, slot]));
+  return { durations, counts, labels };
+}
+
+function compileActionTokens(tokens, slots, context) {
+  const lines = [];
+  let index = 0;
+  while (index < tokens.length) {
+    const commandContext = `${context}: command ${lines.length + 1}`;
+    const op = tokens[index]?.toUpperCase();
+    if (op === "ADD") {
+      const args = tokens.slice(index + 1, index + 3);
+      if (args.length !== 2) throw new Error(`${commandContext}: ADD requires duration and label`);
+      lines.push(`${resolveActionDuration(args[0], slots, commandContext)}: ${resolveActionLabel(args[1], slots, commandContext)}`);
+      index += 3;
+      continue;
+    }
+    if (op === "REP") {
+      const args = tokens.slice(index + 1, index + 4);
+      if (args.length !== 3) throw new Error(`${commandContext}: REP requires count, duration, and label`);
+      lines.push(
+        `${resolveActionCount(args[0], slots, commandContext)}x ${resolveActionDuration(args[1], slots, commandContext)}: ${resolveActionLabel(
+          args[2],
+          slots,
+          commandContext,
+        )}`,
+      );
+      index += 4;
+      continue;
+    }
+    if (op === "ALT" || op === "BLOCK") {
+      const args = tokens.slice(index + 1, index + 6);
+      if (args.length !== 5) throw new Error(`${commandContext}: ${op} requires count and two duration-label atoms`);
+      const prefix = op === "ALT" ? `${resolveActionCount(args[0], slots, commandContext)}alt` : `${resolveActionCount(args[0], slots, commandContext)}x`;
+      lines.push(
+        `${prefix} ${resolveActionDuration(args[1], slots, commandContext)}: ${resolveActionLabel(
+          args[2],
+          slots,
+          commandContext,
+        )} | ${resolveActionDuration(args[3], slots, commandContext)}: ${resolveActionLabel(args[4], slots, commandContext)}`,
+      );
+      index += 6;
+      continue;
+    }
+    throw new Error(`${commandContext}: invalid action op ${JSON.stringify(tokens[index])}`);
+  }
+  return lines;
+}
+
+function cleanActionToken(token) {
+  return token.replace(/^[,:\[\](){}]+|[,:\[\](){}]+$/g, "");
+}
+
+function resolveActionDuration(id, slots, context) {
+  const slot = slots.durations.get(id);
+  if (!slot) throw new Error(`${context}: unknown duration slot ${id}`);
+  return slot.value ?? formatCompactDuration(slot.seconds);
+}
+
+function resolveActionCount(id, slots, context) {
+  const slot = slots.counts.get(id);
+  if (!slot) throw new Error(`${context}: unknown count slot ${id}`);
+  return slot.count;
+}
+
+function resolveActionLabel(id, slots, context) {
+  const slot = slots.labels.get(id);
+  if (!slot) throw new Error(`${context}: unknown label slot ${id}`);
+  return slot.label;
 }
 
 function formatCompressedTimerDsl(timers) {
@@ -372,9 +612,12 @@ export function compareTimerOutputs(expectedTimers, actualTimers, { ignoreLabels
 
 export function readAssistantTarget(record) {
   const assistant = record.messages.find((message) => message.role === "assistant");
-  return (record.targetFormat ?? "json") === "dsl"
-    ? parseTimerDsl(assistant.content, `${record.id}: assistant target`).timers
-    : parseTimerJson(assistant.content, `${record.id}: assistant target`).timers;
+  const targetFormat = record.targetFormat ?? "json";
+  if (targetFormat === "dsl") return parseTimerDsl(assistant.content, `${record.id}: assistant target`).timers;
+  if (targetFormat === "actions") {
+    return parseTimerActions(assistant.content, record.metadata?.actionSlots, `${record.id}: assistant target`).timers;
+  }
+  return parseTimerJson(assistant.content, `${record.id}: assistant target`).timers;
 }
 
 function buildSpecs({
@@ -2758,7 +3001,7 @@ function assertUserFormat(userFormat) {
 }
 
 function assertTargetFormat(targetFormat) {
-  if (!["json", "dsl"].includes(targetFormat)) {
-    throw new Error(`Unknown target format "${targetFormat}". Use "json" or "dsl".`);
+  if (!["json", "dsl", "actions"].includes(targetFormat)) {
+    throw new Error(`Unknown target format "${targetFormat}". Use "json", "dsl", or "actions".`);
   }
 }

@@ -1432,6 +1432,85 @@ Conclusion:
   architecture, or constrained decode surface rather than adding another small
   exact-residual set.
 
+### Phase 4J: Delexicalized Action Plans
+
+Status: completed initial architecture experiment 2026-05-19; not browser
+promoted.
+
+Artifact:
+
+- `training/eval-runs/phase4j-actions-delex/README.md`
+
+Goal:
+
+Reduce the tiny model's count/duration binding burden by moving concrete values
+into extracted slots and asking the model to emit action commands over slot ids.
+
+Example input:
+
+```text
+Request: first and last timer 5minute, 5 one minute timers in between
+Slots: D0=5m; D1=1m; C0=5; L0=Timer
+```
+
+Example target:
+
+```text
+ADD D0 L0
+REP C0 D1 L0
+ADD D0 L0
+END
+```
+
+Implemented:
+
+- Added `--target-format actions`.
+- Added `ACTION_SYSTEM_PROMPT`.
+- Added `formatTimerActions` and `parseTimerActions`.
+- Added `scripts/training/parse-timer-actions-batch.mjs`.
+- Updated Python seq2seq eval and JS endpoint eval to parse action outputs.
+- Built `training/generated-actions-delex-phase4i/`.
+- Added action target unit tests.
+
+Dataset:
+
+- Train rows: 1543
+- Validation rows: 207
+- Hard validation rows: 62
+- Caveat: current dataset uses oracle slots derived from known specs. Production
+  still needs a deterministic slot extractor.
+
+Runs:
+
+| Run | Source | Best strict | Parseable | Semantic-invalid | Result |
+| --- | --- | ---: | ---: | ---: | --- |
+| `phase4j-actions-delex-lr1e-5` | Phase 4H checkpoint | 0/207 | 0/207 | 0/207 | old DSL output bias did not unlearn |
+| `phase4j-actions-delex-base-lr3e-4` | `google/t5-efficient-tiny` | 190/207 | 205/207 | 0/207 | action architecture works; generic categories solved |
+| `phase4j-actions-delex-label-cleanup-lr5e-5` | base action checkpoint-1000 | 191/207 | 203/207 | 0/207 | tiny label-slot cleanup gain |
+
+Beam 8 did not improve the base action checkpoint or label-cleanup checkpoint.
+
+Important category result for the best action checkpoint:
+
+- `count-generic`: 21/21
+- `generic-position`: 5/5
+- `generic-position-hard`: 10/10
+- `user-generic-surface`: 8/8
+- `count-middle`: 35/35
+- `user-duration-surface`: 2/2
+- `explicit-label-copy`: 12/22
+- `user-label-surface`: 1/3 at cleanup step 100/250
+
+Conclusion:
+
+- The architecture directly fixes the failure type that motivated it:
+  count/duration and endpoint/middle binding.
+- It outperforms the best DSL HF validation result (`191/207` vs `185/207`),
+  but this is not apples-to-apples production readiness because action eval uses
+  oracle slots.
+- The next practical task is to implement real slot extraction and then export a
+  browser ONNX action candidate.
+
 ### Phase 5: Quantization-Aware Continuation
 
 Status: pending, only do this if Phase 2 int4/mixed quantization causes useful

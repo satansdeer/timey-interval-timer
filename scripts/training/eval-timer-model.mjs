@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { mkdir, readFile, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
-import { compareTimerOutputs, parseTimerDsl, parseTimerJson, readAssistantTarget } from "./timer-sft-lib.mjs";
+import { compareTimerOutputs, parseTimerActions, parseTimerDsl, parseTimerJson, readAssistantTarget } from "./timer-sft-lib.mjs";
 
 const args = parseArgs(process.argv.slice(2));
 const records = (await readJsonl(resolve(process.cwd(), args.dataset))).slice(0, args.limit ?? undefined);
@@ -19,7 +19,7 @@ for (const [index, record] of records.entries()) {
   let content = null;
   try {
     content = await complete(messages);
-    const parsed = parseModelOutput(content, `${record.id}: model output`, record.targetFormat ?? targetFormat);
+    const parsed = parseModelOutput(content, `${record.id}: model output`, record.targetFormat ?? targetFormat, record);
     parsePasses += 1;
     const strictErrors = compareTimerOutputs(expectedTimers, parsed.timers, { ignoreLabels: false });
     const semanticErrors = compareTimerOutputs(expectedTimers, parsed.timers, { ignoreLabels: true });
@@ -216,15 +216,16 @@ function parseArgs(argv) {
   if (!Number.isInteger(parsed.maxTokens) || parsed.maxTokens < 1) {
     throw new Error("--max-tokens must be a positive integer");
   }
-  if (!["auto", "json", "dsl"].includes(parsed.targetFormat)) {
-    throw new Error("--target-format must be auto, json, or dsl");
+  if (!["auto", "json", "dsl", "actions"].includes(parsed.targetFormat)) {
+    throw new Error("--target-format must be auto, json, dsl, or actions");
   }
 
   return parsed;
 }
 
-function parseModelOutput(content, context, format) {
+function parseModelOutput(content, context, format, record) {
   if (format === "dsl") return parseTimerDsl(content, context);
+  if (format === "actions") return parseTimerActions(content, record.metadata?.actionSlots, context);
   return parseTimerJson(content, context);
 }
 
@@ -246,7 +247,7 @@ Options:
   --out <path>                Write prediction JSONL
   --summary-out <path>        Write aggregate and per-category summary JSON
   --no-response-format        Do not send response_format=json_object
-  --target-format <auto|json|dsl>
+  --target-format <auto|json|dsl|actions>
                               Parse target format (default: auto from dataset)
   --quiet                     Print only the final summary
   --verbose                   Print passing rows too`);

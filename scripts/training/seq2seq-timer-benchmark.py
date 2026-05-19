@@ -134,7 +134,7 @@ def evaluate_step(model, tokenizer, records, args, step, output_dir, device):
             encoded = {key: value.to(device) for key, value in encoded.items()}
             generated = model.generate(**encoded, **generation_args)
             outputs = tokenizer.batch_decode(generated, skip_special_tokens=True)
-            parsed_outputs = parse_timer_dsl_batch(outputs)
+            parsed_outputs = parse_model_outputs(batch_records, outputs)
 
             for record, example, output, parsed_output in zip(batch_records, batch_examples, outputs, parsed_outputs):
                 output = output.strip()
@@ -213,7 +213,8 @@ def record_to_example(record, args):
     user = next(message["content"] for message in messages if message["role"] == "user")
     assistant = next(message["content"] for message in messages if message["role"] == "assistant")
     if args.input_format == "compact":
-        input_text = f"translate timer request to Timey DSL: {user}"
+        task = "Timey actions" if record.get("targetFormat") == "actions" else "Timey DSL"
+        input_text = f"translate timer request to {task}: {user}"
     else:
         input_text = f"{system}\nRequest: {user}"
     return {
@@ -293,6 +294,43 @@ def parse_timer_dsl_batch(contents):
         message = completed.stderr.strip() or completed.stdout.strip() or "DSL parser process failed"
         raise RuntimeError(message)
     return json.loads(completed.stdout)
+
+
+def parse_timer_actions_batch(records, contents):
+    script = Path(__file__).with_name("parse-timer-actions-batch.mjs")
+    payload = [
+        {
+            "content": content,
+            "slots": record.get("metadata", {}).get("actionSlots"),
+        }
+        for record, content in zip(records, contents)
+    ]
+    completed = subprocess.run(
+        ["node", str(script)],
+        input=json.dumps(payload),
+        text=True,
+        capture_output=True,
+        check=False,
+    )
+    if completed.returncode != 0:
+        message = completed.stderr.strip() or completed.stdout.strip() or "action parser process failed"
+        raise RuntimeError(message)
+    return json.loads(completed.stdout)
+
+
+def parse_model_outputs(records, contents):
+    if all(record.get("targetFormat") == "actions" for record in records):
+        return parse_timer_actions_batch(records, contents)
+    if all(record.get("targetFormat") != "actions" for record in records):
+        return parse_timer_dsl_batch(contents)
+
+    parsed = []
+    for record, content in zip(records, contents):
+        if record.get("targetFormat") == "actions":
+            parsed.extend(parse_timer_actions_batch([record], [content]))
+        else:
+            parsed.extend(parse_timer_dsl_batch([content]))
+    return parsed
 
 
 def compare_timer_outputs(expected, actual, ignore_labels):

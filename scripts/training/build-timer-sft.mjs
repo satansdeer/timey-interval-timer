@@ -5,6 +5,7 @@ import {
   DATASET_VERSION,
   DEFAULT_TARGET_FORMAT,
   DEFAULT_USER_FORMAT,
+  QWEN3_ACTION_NO_THINK_SYSTEM_PROMPT,
   QWEN3_DSL_NO_THINK_SYSTEM_PROMPT,
   QWEN3_NO_THINK_SYSTEM_PROMPT,
   buildTimerSftExamples,
@@ -131,6 +132,7 @@ function parseArgs(argv) {
 
 function getSystemPrompt(args) {
   if (!args.qwen3NoThink) return undefined;
+  if (args.targetFormat === "actions") return QWEN3_ACTION_NO_THINK_SYSTEM_PROMPT;
   return args.targetFormat === "dsl" ? QWEN3_DSL_NO_THINK_SYSTEM_PROMPT : QWEN3_NO_THINK_SYSTEM_PROMPT;
 }
 
@@ -146,7 +148,8 @@ Options:
   --phase4i-browser-residual-data
                                 Include train-only rows from raw browser misses
   --qwen3-no-think             Append /no_think to the system prompt for Qwen3 non-thinking mode
-  --target-format <json|dsl>   Assistant target format (default: json)
+  --target-format <json|dsl|actions>
+                                Assistant target format (default: json)
   --user-format <app|natural>  App payload or raw natural-language user turns (default: app)
   --validation-ratio <number>  Fraction of flexible rows held out by category (default: 0.18)`);
 }
