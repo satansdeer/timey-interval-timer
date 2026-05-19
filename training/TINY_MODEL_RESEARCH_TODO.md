@@ -1,6 +1,6 @@
 # Timey Tiny Model Research And Optimization TODO
 
-Last updated: 2026-05-18
+Last updated: 2026-05-19
 
 This document is the continuity file for pushing Timey's in-browser timer model
 as far as practical on both capability and footprint. It is intended to be
@@ -1510,6 +1510,89 @@ Conclusion:
   oracle slots.
 - The next practical task is to implement real slot extraction and then export a
   browser ONNX action candidate.
+
+### Phase 4K: Compact Lossless Slots
+
+Status: completed initial experiment 2026-05-19; not browser promoted.
+
+Artifact:
+
+- `training/eval-runs/phase4k-lossless-slots/README.md`
+
+Goal:
+
+Replace Phase 4J's oracle slots with a production-realistic annotation pass that
+keeps the raw request intact and adds compact source-backed candidate slots.
+
+Example input:
+
+```text
+Request: first and last timer 5minute, 5 one minute timers in between
+Slots: D0@21:28=5m; D1@32:42=1m; C0@30:31=5; L0@default=Timer
+```
+
+Implemented:
+
+- Added `--user-format lossless-slots`.
+- Added `extractLosslessActionSlots(request)`.
+- Slot metadata now supports source spans/default markers while remaining
+  compatible with `parseTimerActions`.
+- `formatTimerActions(timers, { slots })` can bind targets to supplied
+  deterministic candidate slots instead of creating oracle slots.
+- Train-only rows that require values not recoverable from text/default
+  candidates are skipped for this dataset instead of receiving hidden oracle
+  slots.
+
+Dataset:
+
+- Directory: `training/generated-actions-lossless-slots-phase4i/`
+- Train rows: 1518
+- Validation rows: 207
+- Hard validation rows: 62
+- 25 train-only rows skipped as unbindable without oracle information.
+- Train prompt slot counts after alias pruning:
+  - min: 3
+  - median: 12
+  - p90: 14
+  - max: 18
+
+Runs:
+
+| Run | Source | Best strict | Parseable | Semantic-invalid | Result |
+| --- | --- | ---: | ---: | ---: | --- |
+| `phase4k-actions-lossless-slots-continue-lr5e-5` | Phase 4J action checkpoint | 56/207 | 207/207 | 0/207 | parseable but wrong slot ids; continuation is poor |
+| `phase4k-actions-lossless-slots-base-lr3e-4` | `google/t5-efficient-tiny` | 115/207 | 193/207 | 0/207 | broad alias prototype; generic solved, work/rest weak |
+| `phase4k-actions-lossless-slots-pruned-alias-lr3e-4` | `google/t5-efficient-tiny` | 108/207 | 205/207 | 0/207 | current code/dataset; fewer aliases but still weak |
+
+Important category result for the current pruned-alias run:
+
+- Strong:
+  - `count-generic`: 21/21
+  - `generic-position`: 5/5
+  - `generic-timers-hard`: 6/6
+  - `user-generic-surface`: 8/8
+  - `individual-middle`: 20/26
+- Weak:
+  - `count-pairs`: 0/22
+  - `count-middle`: 13/35
+  - `explicit-label-copy`: 9/22
+  - `user-label-surface`: 0/3
+
+Conclusion:
+
+- Lossless annotations are the right production direction because they avoid
+  throwing away semantics before the model runs.
+- They preserve the generic-timer gains from action targets.
+- They are much harder than oracle slots because slot ids become a second output
+  language. Source-order slot ids often differ from timer-order slot ids, and
+  work/rest pair rows suffer most.
+- Do not promote Phase 4K as-is.
+- Next high-value model-language experiment should reduce slot-selection burden
+  without becoming lossy. Candidate directions:
+  - deterministic but non-oracle slot ordering rules, especially for labels
+  - local role references inside actions, such as block-local `A/B` atoms
+  - separate value binding from structural action prediction in two constrained
+    decode passes
 
 ### Phase 5: Quantization-Aware Continuation
 

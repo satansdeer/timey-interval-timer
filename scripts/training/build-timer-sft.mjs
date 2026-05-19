@@ -150,6 +150,7 @@ Options:
   --qwen3-no-think             Append /no_think to the system prompt for Qwen3 non-thinking mode
   --target-format <json|dsl|actions>
                                 Assistant target format (default: json)
-  --user-format <app|natural>  App payload or raw natural-language user turns (default: app)
+  --user-format <app|natural|lossless-slots>
+                                App payload, raw natural turns, or raw request plus span-backed slots (default: app)
   --validation-ratio <number>  Fraction of flexible rows held out by category (default: 0.18)`);
 }

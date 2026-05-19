@@ -2,6 +2,7 @@ import assert from "node:assert/strict";
 import {
   buildTimerSftExamples,
   compareTimerOutputs,
+  extractLosslessActionSlots,
   parseTimerActions,
 } from "../scripts/training/timer-sft-lib.mjs";
 
@@ -34,6 +35,40 @@ assert.deepEqual(
   compareTimerOutputs(
     intervalRecord.metadata.expectedTimers,
     parseTimerActions(intervalRecord.messages[2].content, intervalRecord.metadata.actionSlots).timers,
+  ),
+  [],
+);
+
+const losslessSlots = extractLosslessActionSlots("first and last timer 5minute, 5 one minute timers in between");
+assert.deepEqual(
+  losslessSlots.durations.map((slot) => `${slot.id}@${slot.spans.map((span) => `${span.start}:${span.end}`).join(",") || slot.source}=${slot.value}`),
+  ["D0@21:28=5m", "D1@32:42=1m"],
+);
+assert.deepEqual(
+  losslessSlots.counts.map((slot) => `${slot.id}@${slot.spans.map((span) => `${span.start}:${span.end}`).join(",")}=${slot.count}`),
+  ["C0@30:31=5"],
+);
+assert.deepEqual(losslessSlots.labels.map((slot) => `${slot.id}@${slot.source}=${slot.label}`), ["L0@default=Timer"]);
+
+const losslessRecords = buildTimerSftExamples({
+  targetFormat: "actions",
+  userFormat: "lossless-slots",
+  includePhase4HardData: true,
+  includeUserRequestExpansion: true,
+});
+const losslessRecord = losslessRecords.find(
+  (record) => record.metadata.userRequest === "first and last timer 5minute, 5 one minute timers in between",
+);
+assert.ok(losslessRecord);
+assert.match(losslessRecord.messages[1].content, /^Request: first and last timer 5minute, 5 one minute timers in between\nSlots: /);
+assert.match(losslessRecord.messages[1].content, /D0@21:28=5m/);
+assert.match(losslessRecord.messages[1].content, /D1@32:42=1m/);
+assert.match(losslessRecord.messages[1].content, /C0@30:31=5/);
+assert.equal(losslessRecord.messages[2].content, "ADD D0 L0\nREP C0 D1 L0\nADD D0 L0\nEND");
+assert.deepEqual(
+  compareTimerOutputs(
+    losslessRecord.metadata.expectedTimers,
+    parseTimerActions(losslessRecord.messages[2].content, losslessRecord.metadata.actionSlots).timers,
   ),
   [],
 );

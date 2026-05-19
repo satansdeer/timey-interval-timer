@@ -47,7 +47,7 @@ export const DSL_SYSTEM_PROMPT = [
 ].join(" ");
 export const ACTION_SYSTEM_PROMPT = [
   "You convert natural-language workout timer requests into a Timey action plan.",
-  "The user message includes extracted slots for durations, counts, and labels.",
+  "The user message keeps the raw request and includes extracted slots for durations, counts, and labels.",
   "Return only action commands using those slots.",
   "Use ADD duration label for one timer.",
   "Use REP count duration label for repeated same-label timers.",
@@ -113,9 +113,25 @@ export function buildTimerSftExamples({
     includePhase4HResidualData,
     includePhase4IBrowserResidualData,
   })) {
-    if (userFormat === "natural" && spec.correctionRequest) continue;
+    if ((userFormat === "natural" || userFormat === "lossless-slots") && spec.correctionRequest) continue;
 
-    const actionTarget = targetFormat === "actions" ? formatTimerActions(spec.timers) : null;
+    const actionSlots =
+      targetFormat === "actions" && userFormat === "lossless-slots" ? extractLosslessActionSlots(spec.request) : null;
+    let actionTarget = null;
+    if (targetFormat === "actions") {
+      try {
+        actionTarget = formatTimerActions(spec.timers, { slots: actionSlots });
+      } catch (error) {
+        if (
+          userFormat === "lossless-slots" &&
+          spec.split === "train" &&
+          /^action slots: missing (?:duration|count|label) slot /.test(error.message)
+        ) {
+          continue;
+        }
+        throw new Error(`${spec.category} request ${JSON.stringify(spec.request)}: ${error.message}`);
+      }
+    }
     const assistantContent =
       targetFormat === "dsl"
         ? formatTimerDsl(spec.timers, { endToken: dslEndToken })
@@ -123,8 +139,8 @@ export function buildTimerSftExamples({
           ? actionTarget.content
           : JSON.stringify({ timers: spec.timers });
     const userContent =
-      userFormat === "natural"
-        ? formatUserContent(spec.request, actionTarget)
+      userFormat === "natural" || userFormat === "lossless-slots"
+        ? formatUserContent(spec.request, actionTarget, { userFormat })
         : JSON.stringify({
             ...(spec.payload ?? { correctionRequest: false, userRequest: spec.request }),
             ...(actionTarget ? { actionSlots: actionTarget.slots } : {}),
@@ -257,6 +273,9 @@ export function validateDatasetRecord(record) {
       throw new Error(`${record.id}: user payload must include correctionRequest boolean`);
     }
   }
+  if (record.userFormat === "lossless-slots" && targetFormat !== "actions") {
+    throw new Error(`${record.id}: lossless-slots user format requires actions target format`);
+  }
 
   const parsed =
     targetFormat === "dsl"
@@ -295,8 +314,8 @@ export function formatTimerDsl(timers, { endToken = false } = {}) {
   return endToken ? `${content}\n${DSL_END_TOKEN}` : content;
 }
 
-export function formatTimerActions(timers) {
-  const slotter = createActionSlotter();
+export function formatTimerActions(timers, { slots = null } = {}) {
+  const slotter = slots ? createActionSlotResolver(slots, "action slots") : createActionSlotter();
   const commands = formatActionCommands(timers, slotter);
   return {
     content: [...commands, DSL_END_TOKEN].join("\n"),
@@ -320,9 +339,13 @@ export function parseTimerActions(content, slots, context = "timer actions") {
   return parseTimerDsl(dslLines.join("\n"), context);
 }
 
-function formatUserContent(request, actionTarget) {
+function formatUserContent(request, actionTarget, { userFormat = "natural" } = {}) {
   if (!actionTarget) return request;
-  return [`Request: ${request}`, `Slots: ${formatActionSlotsForPrompt(actionTarget.slots)}`].join("\n");
+  const slots =
+    userFormat === "lossless-slots"
+      ? formatLosslessActionSlotsForPrompt(actionTarget.slots)
+      : formatActionSlotsForPrompt(actionTarget.slots);
+  return [`Request: ${request}`, `Slots: ${slots}`].join("\n");
 }
 
 function formatActionSlotsForPrompt(slots) {
@@ -332,6 +355,21 @@ function formatActionSlotsForPrompt(slots) {
     ...slots.labels.map((slot) => `${slot.id}=${slot.label}`),
   ];
   return values.join("; ");
+}
+
+function formatLosslessActionSlotsForPrompt(slots) {
+  const values = [
+    ...slots.durations.map((slot) => `${slot.id}@${formatSlotLocations(slot)}=${slot.value}`),
+    ...slots.counts.map((slot) => `${slot.id}@${formatSlotLocations(slot)}=${slot.count}`),
+    ...slots.labels.map((slot) => `${slot.id}@${formatSlotLocations(slot)}=${slot.label}`),
+  ];
+  return values.join("; ");
+}
+
+function formatSlotLocations(slot) {
+  const spans = slot.spans ?? (slot.span ? [slot.span] : []);
+  if (spans.length === 0) return slot.source ?? "default";
+  return spans.map((span) => `${span.start}:${span.end}`).join(",");
 }
 
 function createActionSlotter() {
@@ -375,8 +413,469 @@ function createActionSlotter() {
   };
 }
 
+function createActionSlotResolver(slots, context) {
+  const durations = normalizeLosslessSlotList(slots.durations, "durations", context);
+  const counts = normalizeLosslessSlotList(slots.counts, "counts", context);
+  const labels = normalizeLosslessSlotList(slots.labels, "labels", context);
+  const durationIds = new Map();
+  const countIds = new Map();
+  const labelIds = new Map();
+
+  for (const slot of durations) {
+    const key = String(Number(slot.seconds));
+    if (!durationIds.has(key)) durationIds.set(key, slot.id);
+  }
+  for (const slot of counts) {
+    const key = String(Number(slot.count));
+    if (!countIds.has(key)) countIds.set(key, slot.id);
+  }
+  for (const slot of labels) {
+    const key = normalizeActionLabel(slot.label);
+    if (!labelIds.has(key)) labelIds.set(key, slot.id);
+  }
+
+  return {
+    duration(seconds) {
+      const id = durationIds.get(String(Number(seconds)));
+      if (!id) throw new Error(`${context}: missing duration slot for ${formatCompactDuration(Number(seconds))}`);
+      return id;
+    },
+    count(count) {
+      const id = countIds.get(String(Number(count)));
+      if (!id) throw new Error(`${context}: missing count slot for ${count}`);
+      return id;
+    },
+    label(label) {
+      const id = labelIds.get(normalizeActionLabel(label));
+      if (!id) throw new Error(`${context}: missing label slot for ${JSON.stringify(normalizeActionLabel(label))}`);
+      return id;
+    },
+    toJSON() {
+      return { durations, counts, labels };
+    },
+  };
+}
+
+function normalizeLosslessSlotList(value, name, context) {
+  if (!Array.isArray(value)) throw new Error(`${context}: ${name} must be an array`);
+  return value.map((slot, index) => {
+    if (!slot || typeof slot !== "object") throw new Error(`${context}: ${name} ${index + 1} must be an object`);
+    return { ...slot };
+  });
+}
+
 function normalizeActionLabel(label) {
   return isNumberedGenericTimerLabel(label) ? "Timer" : String(label);
+}
+
+export function extractLosslessActionSlots(request) {
+  const source = String(request ?? "");
+  const durationCandidates = extractDurationCandidates(source);
+  const durations = mergeDurationCandidates(durationCandidates);
+  const counts = mergeCountCandidates(extractCountCandidates(source, durationCandidates));
+  const labels = mergeLabelCandidates(extractLabelCandidates(source));
+
+  if (hasImplicitWorkoutDurationCue(source)) {
+    for (const seconds of [60, 30, 45, 20, 15, 10]) {
+      if (!durations.some((slot) => slot.seconds === seconds)) {
+        durations.push(defaultDurationSlot(seconds));
+      }
+    }
+  }
+  if (labels.some((slot) => slot.label === "Work") && !labels.some((slot) => slot.label === "Rest")) {
+    labels.push(defaultLabelSlot("Rest", "paired-default"));
+  }
+  if (labels.some((slot) => slot.label === "Rest") && !labels.some((slot) => slot.label === "Work")) {
+    labels.push(defaultLabelSlot("Work", "paired-default"));
+  }
+  if (!labels.some((slot) => slot.label === "Timer")) {
+    labels.push(defaultLabelSlot("Timer"));
+  }
+
+  assignSlotIds(durations, "D");
+  assignSlotIds(counts, "C");
+  assignSlotIds(labels, "L");
+
+  return { durations, counts, labels };
+}
+
+const SIMPLE_NUMBER_WORD_VALUES = {
+  a: 1,
+  an: 1,
+  one: 1,
+  two: 2,
+  three: 3,
+  four: 4,
+  five: 5,
+  six: 6,
+  seven: 7,
+  eight: 8,
+  nine: 9,
+  ten: 10,
+  eleven: 11,
+  twelve: 12,
+  thirteen: 13,
+  fourteen: 14,
+  fifteen: 15,
+  sixteen: 16,
+  seventeen: 17,
+  eighteen: 18,
+  nineteen: 19,
+  twenty: 20,
+  thirty: 30,
+  forty: 40,
+  fifty: 50,
+  sixty: 60,
+  seventy: 70,
+  eighty: 80,
+  ninety: 90,
+};
+const NUMBER_WORD_TENS = ["twenty", "thirty", "forty", "fifty", "sixty", "seventy", "eighty", "ninety"];
+const NUMBER_WORD_ONES = ["one", "two", "three", "four", "five", "six", "seven", "eight", "nine"];
+const NUMBER_WORD_PATTERN = [
+  "a",
+  "an",
+  ...Object.keys(SIMPLE_NUMBER_WORD_VALUES).filter((word) => word !== "a" && word !== "an"),
+  ...NUMBER_WORD_TENS.flatMap((ten) => NUMBER_WORD_ONES.map((one) => `${ten}[ -]+${one}`)),
+]
+  .sort((left, right) => right.length - left.length)
+  .join("|");
+const NUMBER_PHRASE_PATTERN = `(?:\\d+|${NUMBER_WORD_PATTERN})`;
+const MINUTE_UNIT_PATTERN = String.raw`(?:minutes?|mins?|minu|m)`;
+const SECOND_UNIT_PATTERN = String.raw`(?:seconds?|secs?|sec|s)`;
+const LABEL_PHRASES = [
+  ["high intensity", "High intensity"],
+  ["low intensity", "Low intensity"],
+  ["hard effort", "Hard effort"],
+  ["easy spin", "Easy spin"],
+  ["breathing reset", "Breathing reset"],
+  ["breathe out", "Breathe out"],
+  ["battle ropes", "Battle ropes"],
+  ["bear crawl", "Bear crawl"],
+  ["bear plank", "Bear plank"],
+  ["bird dog", "Bird dog"],
+  ["box step ups", "Box step ups"],
+  ["dead bug", "Dead bug"],
+  ["fast feet", "Fast feet"],
+  ["glute bridge", "Glute bridge"],
+  ["hollow hold", "Hollow hold"],
+  ["jump rope", "Jump rope"],
+  ["jumping jacks", "Jumping jacks"],
+  ["kettlebell swing", "Kettlebell swing"],
+  ["mountain climbers", "Mountain climbers"],
+  ["plank hold", "Plank hold"],
+  ["shadow boxing", "Shadow boxing"],
+  ["shake out", "Shake out"],
+  ["side plank", "Side plank"],
+  ["squat hold", "Squat hold"],
+  ["wall sit", "Wall sit"],
+  ["round a", "Round A"],
+  ["round b", "Round B"],
+  ["round c", "Round C"],
+  ["round d", "Round D"],
+  ["warm down", "Warmdown"],
+  ["warmdown", "Warmdown"],
+  ["cool down", "Cooldown"],
+  ["cooldown", "Cooldown"],
+  ["warm up", "Warmup"],
+  ["warmup", "Warmup"],
+  ["recovery", "Recovery"],
+  ["recovery", "Rest"],
+  ["recover", "Recover"],
+  ["recover", "Rest"],
+  ["pushups", "Pushups"],
+  ["burpees", "Burpees"],
+  ["lunges", "Lunges"],
+  ["skaters", "Skaters"],
+  ["situps", "Situps"],
+  ["squats", "Squats"],
+  ["sprint", "Sprint"],
+  ["plank", "Plank"],
+  ["breath", "Breath"],
+  ["focus", "Focus"],
+  ["march", "March"],
+  ["reach", "Reach"],
+  ["balance", "Balance"],
+  ["prep", "Prep"],
+  ["reset", "Reset"],
+  ["work", "Work"],
+  ["rest", "Rest"],
+  ["hard", "Hard"],
+  ["easy", "Easy"],
+  ["hold", "Hold"],
+].sort((left, right) => right[0].length - left[0].length);
+
+function extractDurationCandidates(source) {
+  const candidates = [];
+  const add = (start, end, seconds, raw, sourceType = "text") => {
+    if (!Number.isFinite(seconds) || seconds <= 0) return;
+    candidates.push({
+      seconds,
+      value: formatCompactDuration(seconds),
+      span: { start, end },
+      spans: [{ start, end }],
+      raw,
+      raws: [raw],
+      source: sourceType,
+    });
+  };
+
+  collectRegex(source, /\b(\d{1,2}):([0-5]\d)\b/g, (match, start, end) => {
+    const minutes = Number(match[1]);
+    const seconds = Number(match[2]);
+    add(start, end, minutes * 60 + seconds, match[0]);
+  });
+
+  collectRegex(source, /\b(?:half[\s-]+a|a[\s-]+half)[\s-]+minutes?\b/gi, (match, start, end) => {
+    add(start, end, 30, match[0]);
+  });
+
+  collectRegex(source, new RegExp(`\\b(${NUMBER_PHRASE_PATTERN})[\\s-]+and[\\s-]+a[\\s-]+half[\\s-]+minutes?\\b`, "gi"), (match, start, end) => {
+    const value = parseNumberPhrase(match[1]);
+    if (value !== null) add(start, end, value * 60 + 30, match[0]);
+  });
+
+  collectRegex(
+    source,
+    new RegExp(`\\b(${NUMBER_PHRASE_PATTERN})\\s*${MINUTE_UNIT_PATTERN}[\\s-]*(${NUMBER_PHRASE_PATTERN})\\s*${SECOND_UNIT_PATTERN}\\b`, "gi"),
+    (match, start, end) => {
+      const minutes = parseNumberPhrase(match[1]);
+      const seconds = parseNumberPhrase(match[2]);
+      if (minutes !== null && seconds !== null) add(start, end, minutes * 60 + seconds, match[0]);
+    },
+  );
+
+  collectRegex(
+    source,
+    new RegExp(`\\b(${NUMBER_PHRASE_PATTERN})\\s*${MINUTE_UNIT_PATTERN}\\b`, "gi"),
+    (match, start, end) => {
+      const value = parseNumberPhrase(match[1]);
+      if (value !== null) add(start, end, value * 60, match[0]);
+    },
+  );
+
+  collectRegex(
+    source,
+    new RegExp(`\\b(${NUMBER_PHRASE_PATTERN})\\s*${SECOND_UNIT_PATTERN}\\b`, "gi"),
+    (match, start, end) => {
+      const value = parseNumberPhrase(match[1]);
+      if (value !== null) add(start, end, value, match[0]);
+    },
+  );
+
+  return selectNonOverlapping(candidates);
+}
+
+function extractCountCandidates(source, durationCandidates) {
+  const durationSpans = durationCandidates.flatMap((candidate) => candidate.spans ?? [candidate.span]).filter(Boolean);
+  const candidates = [];
+
+  collectRegex(source, new RegExp(`\\b(${NUMBER_PHRASE_PATTERN})\\b`, "gi"), (match, start, end) => {
+    if (durationSpans.some((span) => spansOverlap({ start, end }, span))) return;
+    const count = parseNumberPhrase(match[1]);
+    if (count === null || count < 1 || count > MAX_INTERVALS) return;
+    candidates.push({
+      count,
+      span: { start, end },
+      spans: [{ start, end }],
+      raw: match[0],
+      raws: [match[0]],
+      source: "text",
+    });
+  });
+
+  return candidates;
+}
+
+function extractLabelCandidates(source) {
+  const candidates = [];
+  const add = (start, end, label, raw, sourceType = "text") => {
+    const normalized = normalizeActionLabel(label.trim().replace(/\s+/g, " "));
+    if (!normalized) return;
+    candidates.push({
+      label: normalized,
+      span: { start, end },
+      spans: [{ start, end }],
+      raw,
+      raws: [raw],
+      source: sourceType,
+    });
+  };
+
+  collectRegex(source, /:\s*([^,;/\n]+?)(?=\s*(?:,|;|\/|\n|$|\bthen\b))/gi, (match, start) => {
+    const raw = match[1].trim();
+    if (raw.includes(":")) return;
+    if (new RegExp(`\\b(?:${MINUTE_UNIT_PATTERN}|${SECOND_UNIT_PATTERN})\\b`, "i").test(raw)) return;
+    const leadingWhitespace = match[1].match(/^\s*/)?.[0].length ?? 0;
+    const labelStart = start + match[0].indexOf(match[1]) + leadingWhitespace;
+    add(labelStart, labelStart + raw.length, raw, raw);
+  });
+
+  for (const [phrase, label] of LABEL_PHRASES) {
+    const pattern = phrase.replace(/\s+/g, String.raw`[\s-]+`);
+    collectRegex(source, new RegExp(`(?<![A-Za-z])${pattern}(?![A-Za-z])`, "gi"), (match, start, end) => {
+      add(start, end, label, match[0]);
+    });
+  }
+  if (/\bhard\b/i.test(source)) {
+    collectRegex(source, /(?<![A-Za-z])rest(?![A-Za-z])/gi, (match, start, end) => {
+      add(start, end, "Easy", match[0]);
+    });
+  }
+
+  return selectNonOverlapping(candidates, { allowExactSpanOverlap: true });
+}
+
+function mergeDurationCandidates(candidates) {
+  const merged = mergeCandidates(candidates, (candidate) => String(candidate.seconds));
+  return merged.map((slot) => ({
+    seconds: slot.seconds,
+    value: slot.value,
+    span: slot.spans[0] ?? null,
+    spans: slot.spans,
+    raw: slot.raws[0] ?? "",
+    raws: slot.raws,
+    source: slot.source,
+  }));
+}
+
+function mergeCountCandidates(candidates) {
+  const merged = mergeCandidates(candidates, (candidate) => String(candidate.count));
+  return merged.map((slot) => ({
+    count: slot.count,
+    span: slot.spans[0] ?? null,
+    spans: slot.spans,
+    raw: slot.raws[0] ?? "",
+    raws: slot.raws,
+    source: slot.source,
+  }));
+}
+
+function mergeLabelCandidates(candidates) {
+  const merged = mergeCandidates(candidates, (candidate) => normalizeActionLabel(candidate.label));
+  return merged.map((slot) => ({
+    label: slot.label,
+    span: slot.spans[0] ?? null,
+    spans: slot.spans,
+    raw: slot.raws[0] ?? "",
+    raws: slot.raws,
+    source: slot.source,
+  }));
+}
+
+function mergeCandidates(candidates, keyForCandidate) {
+  const byKey = new Map();
+  for (const candidate of candidates) {
+    const key = keyForCandidate(candidate);
+    const existing = byKey.get(key);
+    if (!existing) {
+      byKey.set(key, { ...candidate, spans: [...(candidate.spans ?? [])], raws: [...(candidate.raws ?? [])] });
+      continue;
+    }
+    for (const span of candidate.spans ?? []) {
+      if (!existing.spans.some((known) => known.start === span.start && known.end === span.end)) {
+        existing.spans.push(span);
+      }
+    }
+    for (const raw of candidate.raws ?? []) {
+      if (!existing.raws.includes(raw)) existing.raws.push(raw);
+    }
+  }
+  return [...byKey.values()].sort(compareCandidateLocations);
+}
+
+function defaultDurationSlot(seconds, source = "default") {
+  return {
+    seconds,
+    value: formatCompactDuration(seconds),
+    span: null,
+    spans: [],
+    raw: "",
+    raws: [],
+    source,
+  };
+}
+
+function defaultLabelSlot(label, source = "default") {
+  return {
+    label,
+    span: null,
+    spans: [],
+    raw: "",
+    raws: [],
+    source,
+  };
+}
+
+function assignSlotIds(slots, prefix) {
+  slots.forEach((slot, index) => {
+    slot.id = `${prefix}${index}`;
+  });
+}
+
+function hasImplicitWorkoutDurationCue(source) {
+  return /\b(?:work|rest|rounds?|blocks?|cycles?|sets?|alterations?|alternations?|high|low|hard|easy)\b/i.test(source);
+}
+
+function collectRegex(source, regex, visit) {
+  for (const match of source.matchAll(regex)) {
+    visit(match, match.index, match.index + match[0].length);
+  }
+}
+
+function selectNonOverlapping(candidates, { allowExactSpanOverlap = false } = {}) {
+  const selected = [];
+  for (const candidate of [...candidates].sort(compareCandidatePreference)) {
+    const spans = candidate.spans ?? [candidate.span];
+    if (
+      spans.some((span) =>
+        selected.some((known) => spansOverlap(span, known.span) && !(allowExactSpanOverlap && spansEqual(span, known.span))),
+      )
+    ) {
+      continue;
+    }
+    selected.push(candidate);
+  }
+  return selected.sort(compareCandidateLocations);
+}
+
+function compareCandidatePreference(left, right) {
+  const leftSpan = left.span ?? left.spans?.[0] ?? { start: 0, end: 0 };
+  const rightSpan = right.span ?? right.spans?.[0] ?? { start: 0, end: 0 };
+  if (leftSpan.start !== rightSpan.start) return leftSpan.start - rightSpan.start;
+  const leftLength = leftSpan.end - leftSpan.start;
+  const rightLength = rightSpan.end - rightSpan.start;
+  return rightLength - leftLength;
+}
+
+function compareCandidateLocations(left, right) {
+  const leftSpan = left.spans?.[0] ?? left.span ?? { start: Number.MAX_SAFE_INTEGER, end: Number.MAX_SAFE_INTEGER };
+  const rightSpan = right.spans?.[0] ?? right.span ?? { start: Number.MAX_SAFE_INTEGER, end: Number.MAX_SAFE_INTEGER };
+  if (leftSpan.start !== rightSpan.start) return leftSpan.start - rightSpan.start;
+  return leftSpan.end - rightSpan.end;
+}
+
+function spansOverlap(left, right) {
+  return left.start < right.end && right.start < left.end;
+}
+
+function spansEqual(left, right) {
+  return left.start === right.start && left.end === right.end;
+}
+
+function parseNumberPhrase(value) {
+  const normalized = String(value ?? "")
+    .toLowerCase()
+    .replace(/-/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
+  if (/^\d+$/.test(normalized)) return Number(normalized);
+  if (Object.hasOwn(SIMPLE_NUMBER_WORD_VALUES, normalized)) return SIMPLE_NUMBER_WORD_VALUES[normalized];
+  const [tens, ones] = normalized.split(" ");
+  if (NUMBER_WORD_TENS.includes(tens) && NUMBER_WORD_ONES.includes(ones)) {
+    return SIMPLE_NUMBER_WORD_VALUES[tens] + SIMPLE_NUMBER_WORD_VALUES[ones];
+  }
+  return null;
 }
 
 function formatActionCommands(timers, slotter) {
@@ -395,6 +894,7 @@ function formatActionCommands(timers, slotter) {
 function formatActionHint(hint, slotter) {
   if (!hint) return [];
   if (hint.type === "alt") {
+    if (hint.count === 1) return [`ADD ${formatActionAtom(hint.atoms[0], slotter)}`];
     return [`ALT ${slotter.count(hint.count)} ${hint.atoms.map((atom) => formatActionAtom(atom, slotter)).join(" ")}`];
   }
   if (hint.type === "block") {
@@ -2995,8 +3495,8 @@ function stableHash(value) {
 }
 
 function assertUserFormat(userFormat) {
-  if (!["app", "natural"].includes(userFormat)) {
-    throw new Error(`Unknown user format "${userFormat}". Use "app" or "natural".`);
+  if (!["app", "natural", "lossless-slots"].includes(userFormat)) {
+    throw new Error(`Unknown user format "${userFormat}". Use "app", "natural", or "lossless-slots".`);
   }
 }
 
