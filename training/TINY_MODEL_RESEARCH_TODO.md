@@ -1680,6 +1680,62 @@ Conclusion:
   a direct sequence command such as `SEQ A0 A1 A2`, plus more explicit-label-copy
   data.
 
+### Phase 4M: SEQ Atom Actions
+
+Status: completed experiment 2026-05-19; not browser promoted.
+
+Artifact:
+
+- `training/eval-runs/phase4m-seq-actions/README.md`
+
+Goal:
+
+Test whether exact explicit label-copy rows improve if no-hint atom sequences
+use a compact sequence command instead of repeated `ADD` commands.
+
+Example target:
+
+```text
+SEQ A0 A2 A4
+END
+```
+
+Implemented:
+
+- Added `SEQ atom atom ...` to the action parser.
+- Updated atom-action fallback formatting to emit `SEQ` for multi-timer
+  no-hint sequences.
+- Updated the action prompt and training action tests.
+
+Dataset:
+
+- Directory: `training/generated-actions-lossless-atoms-seq-phase4i/`
+- Train rows: 1501
+- Validation rows: 207
+- Hard validation rows: 62
+- `SEQ` train targets: 188
+- `SEQ` validation targets: 26
+
+Runs:
+
+| Run | Source | Best step | Strict | Parseable | Semantic-invalid | Result |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| `phase4m-actions-lossless-atoms-seq-base-lr3e-4` | `google/t5-efficient-tiny` | 1000 | 134/207 | 206/207 | 0/207 | worse than Phase 4L base |
+| `phase4m-actions-lossless-atoms-seq-cleanup-lr5e-5` | Phase 4L selected checkpoint | 100 | 164/207 | 207/207 | 0/207 | tiny continuation gain |
+
+Hard validation:
+
+- Cleanup checkpoint-100: 46/62 strict, 62/62 parseable, 0 semantic-invalid.
+
+Conclusion:
+
+- `SEQ` is parser-safe and the model can learn it, but it is not the main fix.
+- Explicit label-copy improved only from 6/22 to 7/22.
+- Base training with `SEQ` regressed badly versus Phase 4L base.
+- The remaining problem is wrong atom selection from the menu, not repeated
+  `ADD` syntax. Next work should improve explicit-sequence atom representation,
+  probably by adding a source-ordered `Items:` list or better atom ordering.
+
 ### Phase 5: Quantization-Aware Continuation
 
 Status: pending, only do this if Phase 2 int4/mixed quantization causes useful

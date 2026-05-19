@@ -94,4 +94,17 @@ assert.deepEqual(
   [],
 );
 
+const atomSequenceRecord = losslessAtomRecords.find(
+  (record) => record.metadata.userRequest === "30 seconds: Plank, 45 seconds: Squats, 1 minute: Rest",
+);
+assert.ok(atomSequenceRecord);
+assert.equal(atomSequenceRecord.messages[2].content, "SEQ A0 A2 A4\nEND");
+assert.deepEqual(
+  compareTimerOutputs(
+    atomSequenceRecord.metadata.expectedTimers,
+    parseTimerActions(atomSequenceRecord.messages[2].content, atomSequenceRecord.metadata.actionSlots).timers,
+  ),
+  [],
+);
+
 console.log("training action target tests passed");

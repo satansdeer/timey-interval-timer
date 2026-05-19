@@ -49,7 +49,7 @@ export const ACTION_SYSTEM_PROMPT = [
   "You convert natural-language workout timer requests into a Timey action plan.",
   "The user message keeps the raw request and includes extracted slots for timer atoms, durations, counts, and labels.",
   "Return only action commands using those slots.",
-  "When A atom slots are present, use ADD atom, REP count atom, BLOCK count atom atom, and ALT count atom atom.",
+  "When A atom slots are present, use ADD atom, SEQ atom atom ..., REP count atom, BLOCK count atom atom, and ALT count atom atom.",
   "Otherwise use ADD duration label, REP count duration label, BLOCK count duration label duration label, and ALT count duration label duration label.",
   "Use slot ids exactly, such as A0, D0, C0, and L0. Do not write raw durations, counts, or labels.",
   "Finish with END on its own final line.",
@@ -332,7 +332,7 @@ export function parseTimerActions(content, slots, context = "timer actions") {
     .split(/\s+|;/)
     .map(cleanActionToken)
     .filter(Boolean)
-    .filter((token) => !/^(BEGIN|SEQ)$/i.test(token))
+    .filter((token) => !/^BEGIN$/i.test(token))
     .filter((token) => !new RegExp(`^${DSL_END_TOKEN}$`, "i").test(token));
 
   if (tokens.length < 1) throw new Error(`${context}: no action commands`);
@@ -1118,6 +1118,9 @@ function formatActionHint(hint, slotter, options = {}) {
 }
 
 function formatActionRuns(timers, slotter, options = {}) {
+  if (options.atomActions && timers.length > 1) {
+    return [`SEQ ${timers.map((entry) => formatActionAtom(entry, slotter, options)).join(" ")}`];
+  }
   const commands = [];
   for (let index = 0; index < timers.length; ) {
     const current = normalizeComparableTimer(timers[index]);
@@ -1174,6 +1177,20 @@ function compileActionTokens(tokens, slots, context) {
       }
       continue;
     }
+    if (op === "SEQ") {
+      const atoms = [];
+      let cursor = index + 1;
+      while (cursor < tokens.length && !isActionOpToken(tokens[cursor])) {
+        const atom = tokens[cursor];
+        if (!isActionAtomId(atom)) throw new Error(`${commandContext}: SEQ requires atom ids`);
+        atoms.push(atom);
+        cursor += 1;
+      }
+      if (atoms.length < 1) throw new Error(`${commandContext}: SEQ requires at least one atom`);
+      lines.push(...atoms.map((atom) => resolveActionAtom(atom, slots, commandContext)));
+      index = cursor;
+      continue;
+    }
     if (op === "REP") {
       const count = tokens[index + 1];
       const first = tokens[index + 2];
@@ -1225,6 +1242,10 @@ function compileActionTokens(tokens, slots, context) {
 
 function cleanActionToken(token) {
   return token.replace(/^[,:\[\](){}]+|[,:\[\](){}]+$/g, "");
+}
+
+function isActionOpToken(token) {
+  return /^(ADD|SEQ|REP|ALT|BLOCK)$/i.test(String(token ?? ""));
 }
 
 function isActionAtomId(token) {
