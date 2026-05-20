@@ -16,6 +16,7 @@ import {
 const args = parseArgs(process.argv.slice(2));
 const outDir = resolve(process.cwd(), args.outDir);
 const allRecords = buildTimerSftExamples({
+  actionOrderHints: args.actionOrderHints,
   actionSeqLength: args.actionSeqLength,
   dslEndToken: args.dslEndToken,
   includePhase4HardData: args.phase4HardData,
@@ -24,11 +25,12 @@ const allRecords = buildTimerSftExamples({
   includePhase4IBrowserResidualData: args.phase4IBrowserResidualData,
   includePhase4OResidualData: args.phase4OResidualData,
   includePhase4PSeqLengthData: args.phase4PSeqLengthData,
+  includePhase4QRoleOrderData: args.phase4QRoleOrderData,
   targetFormat: args.targetFormat,
   userFormat: args.userFormat,
   systemPrompt: getSystemPrompt(args),
 });
-const { train, validation, hardValidation } = splitTimerSftExamples(allRecords, {
+const { train, validation, hardValidation, hiddenValidation } = splitTimerSftExamples(allRecords, {
   validationRatio: args.validationRatio,
 });
 
@@ -39,6 +41,9 @@ await writeJsonl(resolve(outDir, "timer-sft-validation.jsonl"), validation);
 if (hardValidation.length > 0) {
   await writeJsonl(resolve(outDir, "timer-sft-hard-validation.jsonl"), hardValidation);
 }
+if (hiddenValidation.length > 0) {
+  await writeJsonl(resolve(outDir, "timer-sft-hidden-validation.jsonl"), hiddenValidation);
+}
 await writeFile(
   resolve(outDir, "timer-sft-manifest.json"),
   `${JSON.stringify(
@@ -46,6 +51,7 @@ await writeFile(
       datasetVersion: DATASET_VERSION,
       targetFormat: args.targetFormat,
       userFormat: args.userFormat,
+      actionOrderHints: args.targetFormat === "actions" ? args.actionOrderHints : false,
       actionSeqLength: args.targetFormat === "actions" ? args.actionSeqLength : false,
       dslEndToken: args.targetFormat === "dsl" ? args.dslEndToken : false,
       phase4HardData: args.phase4HardData,
@@ -54,6 +60,7 @@ await writeFile(
       phase4IBrowserResidualData: args.phase4IBrowserResidualData,
       phase4OResidualData: args.phase4OResidualData,
       phase4PSeqLengthData: args.phase4PSeqLengthData,
+      phase4QRoleOrderData: args.phase4QRoleOrderData,
       qwen3NoThink: args.qwen3NoThink,
       validationRatio: args.validationRatio,
       files: {
@@ -61,11 +68,13 @@ await writeFile(
         train: "timer-sft-train.jsonl",
         validation: "timer-sft-validation.jsonl",
         ...(hardValidation.length > 0 ? { hardValidation: "timer-sft-hard-validation.jsonl" } : {}),
+        ...(hiddenValidation.length > 0 ? { hiddenValidation: "timer-sft-hidden-validation.jsonl" } : {}),
       },
       all: summarizeRecords([...train, ...validation]),
       train: summarizeRecords(train),
       validation: summarizeRecords(validation),
       ...(hardValidation.length > 0 ? { hardValidation: summarizeRecords(hardValidation) } : {}),
+      ...(hiddenValidation.length > 0 ? { hiddenValidation: summarizeRecords(hiddenValidation) } : {}),
     },
     null,
     2,
@@ -76,6 +85,7 @@ await writeFile(
 console.log(
   `Wrote ${train.length} train, ${validation.length} validation` +
     `${hardValidation.length > 0 ? `, and ${hardValidation.length} hard validation` : ""}` +
+    `${hiddenValidation.length > 0 ? `, plus ${hiddenValidation.length} hidden validation` : ""}` +
     ` examples to ${outDir}`,
 );
 
@@ -86,6 +96,7 @@ function writeJsonl(path, records) {
 function parseArgs(argv) {
   const parsed = {
     outDir: "training/generated",
+    actionOrderHints: false,
     actionSeqLength: false,
     dslEndToken: false,
     phase4HardData: false,
@@ -94,6 +105,7 @@ function parseArgs(argv) {
     phase4IBrowserResidualData: false,
     phase4OResidualData: false,
     phase4PSeqLengthData: false,
+    phase4QRoleOrderData: false,
     qwen3NoThink: false,
     targetFormat: DEFAULT_TARGET_FORMAT,
     userFormat: DEFAULT_USER_FORMAT,
@@ -104,6 +116,8 @@ function parseArgs(argv) {
     const arg = argv[index];
     if (arg === "--out-dir") {
       parsed.outDir = argv[++index];
+    } else if (arg === "--action-order-hints") {
+      parsed.actionOrderHints = true;
     } else if (arg === "--action-seq-length") {
       parsed.actionSeqLength = true;
     } else if (arg === "--dsl-end-token") {
@@ -120,6 +134,8 @@ function parseArgs(argv) {
       parsed.phase4OResidualData = true;
     } else if (arg === "--phase4p-seq-length-data") {
       parsed.phase4PSeqLengthData = true;
+    } else if (arg === "--phase4q-role-order-data") {
+      parsed.phase4QRoleOrderData = true;
     } else if (arg === "--qwen3-no-think") {
       parsed.qwen3NoThink = true;
     } else if (arg === "--target-format") {
@@ -156,6 +172,7 @@ function printHelp() {
 
 Options:
   --out-dir <path>             Output directory (default: training/generated)
+  --action-order-hints         Add lossless role order hints to action prompts
   --action-seq-length          Use SEQn action opcodes, for example SEQ3 I0 I1 I2
   --dsl-end-token              End DSL assistant targets with END on a final line
   --phase4-hard-data           Include opt-in hard generic-position/generic-timer rows
@@ -165,6 +182,7 @@ Options:
                                 Include train-only rows from raw browser misses
   --phase4o-residual-data      Include train-only targeted residual rows after Phase 4N
   --phase4p-seq-length-data    Include train-only pedagogy rows for SEQn action syntax
+  --phase4q-role-order-data    Include role/order/count curriculum rows plus hidden stress eval
   --qwen3-no-think             Append /no_think to the system prompt for Qwen3 non-thinking mode
   --target-format <json|dsl|actions>
                                 Assistant target format (default: json)

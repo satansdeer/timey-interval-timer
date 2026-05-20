@@ -62,9 +62,15 @@ export const ACTION_SEQ_LENGTH_SYSTEM_PROMPT = [
   "When I item slots are present, use ADD item, SEQn item item ..., REP count item, BLOCK count item item, and ALT count item item.",
   "When A atom slots are present, use ADD atom, SEQn atom atom ..., REP count atom, BLOCK count atom atom, and ALT count atom atom.",
   "In SEQn, n is the exact number of item or atom ids that follow, such as SEQ3 I0 I1 I2.",
+  "If ItemCount is present, use it to choose SEQn for explicit item sequences.",
   "Otherwise use ADD duration label, REP count duration label, BLOCK count duration label duration label, and ALT count duration label duration label.",
   "Use slot ids exactly, such as I0, A0, D0, C0, and L0. Do not write raw durations, counts, or labels.",
   "Finish with END on its own final line.",
+].join(" ");
+export const ACTION_ORDER_HINT_SYSTEM_PROMPT = [
+  ACTION_SEQ_LENGTH_SYSTEM_PROMPT,
+  "If the prompt includes Order hints like O0=A6>A5(Rest>Work), use those atom ids when they match ALT or BLOCK role order.",
+  "If an Order hint has three atom ids like O0=A1>A0>A2(Timer>Timer>Timer), use them as start, repeated middle, and end when a count is present.",
 ].join(" ");
 export const SYSTEM_PROMPT = JSON_SYSTEM_PROMPT;
 export const QWEN3_NO_THINK_SYSTEM_PROMPT = `${SYSTEM_PROMPT} /no_think`;
@@ -99,6 +105,7 @@ const NATURAL_REQUEST_USER_FORMATS = ["natural", "lossless-slots", "lossless-ato
 const LOSSLESS_ACTION_USER_FORMATS = ["lossless-slots", "lossless-atoms", "lossless-items", "lossless-item-atoms"];
 
 export function buildTimerSftExamples({
+  actionOrderHints = false,
   actionSeqLength = false,
   dslEndToken = false,
   includePhase4HardData = false,
@@ -107,6 +114,7 @@ export function buildTimerSftExamples({
   includePhase4IBrowserResidualData = false,
   includePhase4OResidualData = false,
   includePhase4PSeqLengthData = false,
+  includePhase4QRoleOrderData = false,
   targetFormat = DEFAULT_TARGET_FORMAT,
   userFormat = DEFAULT_USER_FORMAT,
   systemPrompt = null,
@@ -121,7 +129,9 @@ export function buildTimerSftExamples({
     (targetFormat === "dsl"
       ? DSL_SYSTEM_PROMPT
       : targetFormat === "actions"
-        ? actionSeqLength
+        ? actionOrderHints
+          ? ACTION_ORDER_HINT_SYSTEM_PROMPT
+          : actionSeqLength
           ? ACTION_SEQ_LENGTH_SYSTEM_PROMPT
           : ACTION_SYSTEM_PROMPT
         : JSON_SYSTEM_PROMPT);
@@ -137,6 +147,7 @@ export function buildTimerSftExamples({
     includePhase4IBrowserResidualData,
     includePhase4OResidualData,
     includePhase4PSeqLengthData,
+    includePhase4QRoleOrderData,
   })) {
     if (isNaturalRequestUserFormat(userFormat) && spec.correctionRequest) continue;
 
@@ -145,6 +156,7 @@ export function buildTimerSftExamples({
         ? extractLosslessActionSlots(spec.request, {
             includeAtoms: userFormat === "lossless-atoms" || userFormat === "lossless-items" || userFormat === "lossless-item-atoms",
             includeItems: userFormat === "lossless-items" || userFormat === "lossless-item-atoms",
+            includeOrderHints: actionOrderHints,
           })
         : null;
     const atomActions = userFormat === "lossless-atoms" || userFormat === "lossless-item-atoms";
@@ -189,6 +201,7 @@ export function buildTimerSftExamples({
       split: spec.split ?? null,
       targetFormat,
       userFormat,
+      actionOrderHints: targetFormat === "actions" ? Boolean(actionOrderHints) : false,
       actionSeqLength: targetFormat === "actions" ? Boolean(actionSeqLength) : false,
       dslEndToken: targetFormat === "dsl" ? Boolean(dslEndToken) : false,
       messages: [
@@ -203,6 +216,7 @@ export function buildTimerSftExamples({
         ...(spec.source ? { source: spec.source } : {}),
         ...(spec.sourceCategory ? { sourceCategory: spec.sourceCategory } : {}),
         ...(spec.hardValidation ? { hardValidation: true } : {}),
+        ...(spec.hiddenValidation ? { hiddenValidation: true } : {}),
         ...(spec.duplicateOk ? { duplicateOk: true } : {}),
       },
     };
@@ -218,6 +232,7 @@ export function splitTimerSftExamples(records, { validationRatio = 0.18 } = {}) 
   const train = [];
   const validation = [];
   const hardValidation = [];
+  const hiddenValidation = [];
   const flexibleByCategory = new Map();
 
   for (const record of records) {
@@ -227,6 +242,9 @@ export function splitTimerSftExamples(records, { validationRatio = 0.18 } = {}) 
       const prepared = withoutSplit(record);
       validation.push(prepared);
       if (prepared.metadata?.hardValidation) hardValidation.push(prepared);
+    } else if (record.split === "hidden") {
+      const prepared = withoutSplit(record);
+      hiddenValidation.push(prepared);
     } else {
       const group = flexibleByCategory.get(record.category) ?? [];
       group.push(record);
@@ -250,6 +268,7 @@ export function splitTimerSftExamples(records, { validationRatio = 0.18 } = {}) 
     train: train.sort(compareIds),
     validation: validation.sort(compareIds),
     hardValidation: hardValidation.sort(compareIds),
+    hiddenValidation: hiddenValidation.sort(compareIds),
   };
 }
 
@@ -392,15 +411,20 @@ function formatUserContent(request, actionTarget, { userFormat = "natural" } = {
       `Request: ${request}`,
       `Counts: ${formatLosslessCountSlotsForPrompt(actionTarget.slots)}`,
       `Items: ${formatLosslessItemSlotsForPrompt(actionTarget.slots)}`,
+      `ItemCount: ${formatLosslessItemCountForPrompt(actionTarget.slots)}`,
     ].join("\n");
   }
   if (userFormat === "lossless-item-atoms") {
-    return [
+    const lines = [
       `Request: ${request}`,
       `Counts: ${formatLosslessCountSlotsForPrompt(actionTarget.slots)}`,
       `Items: ${formatLosslessItemSlotsForPrompt(actionTarget.slots)}`,
+      `ItemCount: ${formatLosslessItemCountForPrompt(actionTarget.slots)}`,
       `Atoms: ${formatLosslessAtomSlotsForPrompt(actionTarget.slots)}`,
-    ].join("\n");
+    ];
+    const orderHints = formatLosslessOrderHintsForPrompt(actionTarget.slots);
+    if (orderHints) lines.push(`Order: ${orderHints}`);
+    return lines.join("\n");
   }
   const slots = userFormat === "lossless-slots" ? formatLosslessActionSlotsForPrompt(actionTarget.slots) : formatActionSlotsForPrompt(actionTarget.slots);
   return [`Request: ${request}`, `Slots: ${slots}`].join("\n");
@@ -434,6 +458,22 @@ function formatLosslessAtomSlotsForPrompt(slots) {
 
 function formatLosslessItemSlotsForPrompt(slots) {
   return slots.items.map((slot) => `${slot.id}@${formatSlotLocations(slot)}=${slot.value}:${slot.label}`).join("; ") || "none";
+}
+
+function formatLosslessItemCountForPrompt(slots) {
+  return String(slots.items.length);
+}
+
+function formatLosslessOrderHintsForPrompt(slots) {
+  return (
+    slots.orderHints
+      ?.map((slot) => {
+        const atomIds = slot.atomIds ?? [slot.firstAtomId, slot.secondAtomId].filter(Boolean);
+        const labels = slot.labels ?? [slot.firstLabel, slot.secondLabel].filter(Boolean);
+        return `${slot.id}@${formatSlotLocations(slot)}=${atomIds.join(">")}(${labels.join(">")})`;
+      })
+      .join("; ") ?? ""
+  );
 }
 
 function formatSlotLocations(slot) {
@@ -510,6 +550,7 @@ function createActionSlotResolver(slots, context) {
   const labels = normalizeLosslessSlotList(slots.labels, "labels", context);
   const atoms = normalizeLosslessSlotList(slots.atoms ?? [], "atoms", context);
   const items = normalizeLosslessSlotList(slots.items ?? [], "items", context);
+  const orderHints = normalizeLosslessSlotList(slots.orderHints ?? [], "orderHints", context);
   const durationIds = new Map();
   const countIds = new Map();
   const labelIds = new Map();
@@ -585,7 +626,7 @@ function createActionSlotResolver(slots, context) {
       return id;
     },
     toJSON() {
-      return { durations, counts, labels, atoms, items };
+      return { durations, counts, labels, atoms, items, orderHints };
     },
   };
 }
@@ -602,7 +643,7 @@ function normalizeActionLabel(label) {
   return isNumberedGenericTimerLabel(label) ? "Timer" : String(label);
 }
 
-export function extractLosslessActionSlots(request, { includeAtoms = false, includeItems = false } = {}) {
+export function extractLosslessActionSlots(request, { includeAtoms = false, includeItems = false, includeOrderHints = false } = {}) {
   const source = String(request ?? "");
   const durationCandidates = extractDurationCandidates(source);
   const durations = mergeDurationCandidates(durationCandidates);
@@ -633,8 +674,10 @@ export function extractLosslessActionSlots(request, { includeAtoms = false, incl
   assignSlotIds(atoms, "A");
   const items = includeItems ? buildLosslessItemSlots(source, durations, labels, atoms) : [];
   assignSlotIds(items, "I");
+  const orderHints = includeOrderHints ? buildLosslessOrderHints(source, atoms) : [];
+  assignSlotIds(orderHints, "O");
 
-  return { durations, counts, labels, atoms, items };
+  return { durations, counts, labels, atoms, items, orderHints };
 }
 
 const SIMPLE_NUMBER_WORD_VALUES = {
@@ -1167,6 +1210,173 @@ function itemFromParts(duration, label, spans, source) {
   };
 }
 
+function buildLosslessOrderHints(source, atoms) {
+  if (!atoms.length) return [];
+  const hints = [];
+  const seen = new Set();
+  const rolePattern = String.raw`(?:high[\s-]+intensity|low[\s-]+intensity|hard[\s-]+effort|easy[\s-]+spin|work|rest|hard|easy|high|low|recovery|recover)`;
+  const separatorPattern = String.raw`(?:\s*(?:\/|-|,)\s*|\s+then\s+|\s+before\s+)`;
+  collectRegex(source, new RegExp(`\\b(${rolePattern})${separatorPattern}(${rolePattern})\\b`, "gi"), (match, start, end) => {
+    if (/\blabels?\b/i.test(source.slice(end, Math.min(source.length, end + 16)))) return;
+    const firstLabel = normalizeOrderRoleLabel(match[1], atoms);
+    const secondLabel = normalizeOrderRoleLabel(match[2], atoms);
+    if (!firstLabel || !secondLabel || firstLabel === secondLabel) return;
+    const firstAtom = findOrderHintAtom(atoms, firstLabel, { start, end });
+    const secondAtom = findOrderHintAtom(atoms, secondLabel, { start, end });
+    if (!firstAtom || !secondAtom || firstAtom.id === secondAtom.id) return;
+    addOrderHint(hints, seen, [firstAtom, secondAtom], { start, end }, match[0], "text");
+  });
+  addAdjacentRoleOrderHints(source, atoms, hints, seen, rolePattern);
+  addOpeningClosingOrderHints(source, atoms, hints, seen);
+  return hints.sort(compareCandidateLocations);
+}
+
+function addAdjacentRoleOrderHints(source, atoms, hints, seen, rolePattern) {
+  const mentions = [];
+  collectRegex(source, new RegExp(`\\b(${rolePattern})\\b`, "gi"), (match, start, end) => {
+    const label = normalizeOrderRoleLabel(match[1], atoms);
+    if (!label) return;
+    const atom = findOrderHintAtom(atoms, label, { start, end });
+    if (!atom) return;
+    const key = `${start}:${end}:${atom.id}`;
+    if (mentions.some((mention) => mention.key === key)) return;
+    mentions.push({ key, atom, span: { start, end }, raw: match[0] });
+  });
+
+  for (let index = 0; index < mentions.length - 1; index += 1) {
+    const first = mentions[index];
+    const second = mentions[index + 1];
+    if (first.atom.id === second.atom.id) continue;
+    const between = source.slice(first.span.end, second.span.start);
+    if (between.length > 56) continue;
+    if (!/(?:,|\/|-|\bthen\b|\bbefore\b)/i.test(between)) continue;
+    if (/\bis\b/i.test(between)) continue;
+    if (/\blabels?\b/i.test(source.slice(second.span.end, Math.min(source.length, second.span.end + 16)))) continue;
+    addOrderHint(
+      hints,
+      seen,
+      [first.atom, second.atom],
+      { start: first.span.start, end: second.span.end },
+      source.slice(first.span.start, second.span.end),
+      "label-order",
+    );
+  }
+}
+
+function addOpeningClosingOrderHints(source, atoms, hints, seen) {
+  if (!/\bbetween\b/i.test(source)) return;
+  const openingMatch = /\bopening\b/i.exec(source);
+  const closingMatch = /\bclosing\b/i.exec(source);
+  if (!openingMatch || !closingMatch) return;
+
+  const openingSpan = { start: openingMatch.index, end: openingMatch.index + openingMatch[0].length };
+  const closingSpan = { start: closingMatch.index, end: closingMatch.index + closingMatch[0].length };
+  const openingAtom = findOrderHintAtomBySpan(atoms, openingSpan, { label: "Timer" });
+  const closingAtom = findOrderHintAtomBySpan(atoms, closingSpan, { label: "Timer" });
+  if (!openingAtom || !closingAtom || openingAtom.id === closingAtom.id) return;
+
+  const betweenMatch = /\bbetween\b/i.exec(source);
+  const betweenSpan = betweenMatch
+    ? { start: betweenMatch.index, end: betweenMatch.index + betweenMatch[0].length }
+    : { start: openingSpan.start, end: closingSpan.end };
+  const middleAtom = findOrderHintAtomBySpan(
+    atoms.filter((atom) => atom.id !== openingAtom.id && atom.id !== closingAtom.id),
+    betweenSpan,
+    { label: "Timer", preferBefore: openingSpan.start },
+  );
+  if (!middleAtom) return;
+
+  addOrderHint(
+    hints,
+    seen,
+    [openingAtom, middleAtom, closingAtom],
+    { start: Math.min(middleAtom.spans?.[0]?.start ?? openingSpan.start, openingSpan.start), end: closingSpan.end },
+    source.slice(Math.min(middleAtom.spans?.[0]?.start ?? openingSpan.start, openingSpan.start), closingSpan.end),
+    "opening-closing",
+  );
+}
+
+function addOrderHint(hints, seen, atoms, span, raw, source) {
+  const key = `${span.start}:${span.end}:${atoms.map((atom) => atom.id).join(">")}`;
+  if (seen.has(key)) return;
+  seen.add(key);
+  const [firstAtom, secondAtom] = atoms;
+  hints.push({
+    atomIds: atoms.map((atom) => atom.id),
+    labels: atoms.map((atom) => atom.label),
+    firstAtomId: firstAtom?.id,
+    secondAtomId: secondAtom?.id,
+    firstLabel: firstAtom?.label,
+    secondLabel: secondAtom?.label,
+    span,
+    spans: [span],
+    raw,
+    raws: [raw],
+    source,
+  });
+}
+
+function normalizeOrderRoleLabel(value, atoms) {
+  const normalized = String(value ?? "")
+    .toLowerCase()
+    .replace(/[-\s]+/g, " ")
+    .trim();
+  if (normalized === "work") return preferExistingAtomLabel(atoms, ["Work", "Hard", "Hard effort"]) ?? "Work";
+  if (normalized === "rest") return preferExistingAtomLabel(atoms, ["Rest", "Easy", "Easy spin", "Recovery", "Recover"]) ?? "Rest";
+  if (normalized === "hard") return preferExistingAtomLabel(atoms, ["Hard", "Work", "Hard effort"]) ?? "Hard";
+  if (normalized === "easy") return preferExistingAtomLabel(atoms, ["Easy", "Rest", "Easy spin"]) ?? "Easy";
+  if (normalized === "high") return preferExistingAtomLabel(atoms, ["High intensity", "Work"]) ?? "High intensity";
+  if (normalized === "low") return preferExistingAtomLabel(atoms, ["Low intensity", "Rest"]) ?? "Low intensity";
+  if (normalized === "high intensity") return "High intensity";
+  if (normalized === "low intensity") return "Low intensity";
+  if (normalized === "hard effort") return "Hard effort";
+  if (normalized === "easy spin") return "Easy spin";
+  if (normalized === "recovery") return preferExistingAtomLabel(atoms, ["Recovery", "Rest", "Easy"]) ?? "Recovery";
+  if (normalized === "recover") return preferExistingAtomLabel(atoms, ["Recover", "Rest", "Easy"]) ?? "Recover";
+  return null;
+}
+
+function preferExistingAtomLabel(atoms, labels) {
+  return labels.find((label) => atoms.some((atom) => atom.label === label)) ?? null;
+}
+
+function findOrderHintAtom(atoms, label, span) {
+  const candidates = atoms.filter((atom) => atom.label === label);
+  if (!candidates.length) return null;
+  return [...candidates].sort((left, right) => {
+    const leftDistance = closestSpanDistance([span], left.spans ?? []);
+    const rightDistance = closestSpanDistance([span], right.spans ?? []);
+    if (leftDistance !== rightDistance) return leftDistance - rightDistance;
+    const leftSource = orderHintAtomSourceRank(left);
+    const rightSource = orderHintAtomSourceRank(right);
+    if (leftSource !== rightSource) return leftSource - rightSource;
+    return Number(left.seconds) - Number(right.seconds);
+  })[0];
+}
+
+function findOrderHintAtomBySpan(atoms, span, { label = null, preferBefore = null } = {}) {
+  const candidates = label ? atoms.filter((atom) => atom.label === label) : atoms;
+  if (!candidates.length) return null;
+  return [...candidates].sort((left, right) => {
+    const leftBeforePenalty =
+      preferBefore === null || (left.spans ?? []).some((candidateSpan) => candidateSpan.end <= preferBefore) ? 0 : 1;
+    const rightBeforePenalty =
+      preferBefore === null || (right.spans ?? []).some((candidateSpan) => candidateSpan.end <= preferBefore) ? 0 : 1;
+    if (leftBeforePenalty !== rightBeforePenalty) return leftBeforePenalty - rightBeforePenalty;
+    const leftDistance = closestSpanDistance([span], left.spans ?? []);
+    const rightDistance = closestSpanDistance([span], right.spans ?? []);
+    if (leftDistance !== rightDistance) return leftDistance - rightDistance;
+    return compareCandidateLocations(left, right);
+  })[0];
+}
+
+function orderHintAtomSourceRank(atom) {
+  if (atom.sources?.includes("workout") || atom.source === "workout") return 0;
+  if (atom.sources?.includes("nearby") || atom.source === "nearby") return 1;
+  if (atom.sources?.includes("colon") || atom.source === "colon") return 2;
+  return 3;
+}
+
 function nearestDurationSlots(label, durations, limit, { maxDistance = 80 } = {}) {
   if (!label.spans?.length) return [];
   return durations
@@ -1649,6 +1859,7 @@ function buildSpecs({
   includePhase4IBrowserResidualData = false,
   includePhase4OResidualData = false,
   includePhase4PSeqLengthData = false,
+  includePhase4QRoleOrderData = false,
 } = {}) {
   const specs = [];
   const add = (category, request, timers, options = {}) => {
@@ -1671,6 +1882,7 @@ function buildSpecs({
   if (includePhase4IBrowserResidualData) addPhase4IBrowserResidualSpecs(add);
   if (includePhase4OResidualData) addPhase4OResidualSpecs(add);
   if (includePhase4PSeqLengthData) addPhase4PSeqLengthSpecs(add);
+  if (includePhase4QRoleOrderData) addPhase4QRoleOrderSpecs(add);
 
   return specs;
 }
@@ -1806,17 +2018,36 @@ function addPairSpecs(add) {
         const noun = nouns[variant % nouns.length];
         const duration = durationText(durationSeconds);
         const templates = [
-          `Warmup ${warmupMinutes} min, then ${count} alternating ${noun} of ${duration} rest and ${duration} work, then ${cooldownMinutes} min cooldown`,
-          `Give me a ${warmupMinutes} minute warmup and ${cooldownMinutes} minute cooldown with ${count} ${noun} of ${duration} hard then ${duration} rest`,
-          `${wordOrNumber(count, variant)} ${noun}: ${duration} work, ${duration} recovery, after ${warmupMinutes} min warmup and before ${cooldownMinutes} min cooldown`,
-          `Start with ${warmupMinutes} minutes warm up, do ${count} ${noun} each containing ${duration} hard and ${duration} easy, finish with ${cooldownMinutes} minutes cool down`,
+          {
+            text: `Warmup ${warmupMinutes} min, then ${count} alternating ${noun} of ${duration} rest and ${duration} work, then ${cooldownMinutes} min cooldown`,
+            order: ["rest", "work"],
+            labels: workRestLabels(),
+          },
+          {
+            text: `Give me a ${warmupMinutes} minute warmup and ${cooldownMinutes} minute cooldown with ${count} ${noun} of ${duration} hard then ${duration} easy`,
+            order: ["work", "rest"],
+            labels: hardEasyLabels(),
+          },
+          {
+            text: `${wordOrNumber(count, variant)} ${noun}: ${duration} work, ${duration} recovery, after ${warmupMinutes} min warmup and before ${cooldownMinutes} min cooldown`,
+            order: ["work", "rest"],
+            labels: workRecoveryLabels(),
+          },
+          {
+            text: `Start with ${warmupMinutes} minutes warm up, do ${count} ${noun} each containing ${duration} hard and ${duration} easy, finish with ${cooldownMinutes} minutes cool down`,
+            order: ["work", "rest"],
+            labels: hardEasyLabels(),
+          },
         ];
-        const order = variant % 2 === 0 ? ["rest", "work"] : ["work", "rest"];
-        const labels = templates[variant % templates.length].includes("hard") ? hardEasyLabels() : workRestLabels();
+        const template = templates[variant % templates.length];
         add(
           "pairs",
-          templates[variant % templates.length],
-          withEndpoints(warmupMinutes, cooldownMinutes, pairs(count, order, durationSeconds, durationSeconds, labels)),
+          template.text,
+          withEndpoints(
+            warmupMinutes,
+            cooldownMinutes,
+            pairs(count, template.order, durationSeconds, durationSeconds, template.labels),
+          ),
         );
         variant += 1;
       }
@@ -2539,7 +2770,7 @@ function addUserAroundContrastSpecs(add) {
             `bookend ${countText} ${duration} alternating intervals with ${warmupMinutes} min warmup and ${cooldownMinutes} min cooldown, ${order.phrase}`,
             `put ${countText} ${duration} ${order.words} timers between a ${warmupMinutes} minute warmup and ${cooldownMinutes} minute cooldown`,
             `start with warmup ${warmupMinutes} minutes, surround the ${countText} middle ${duration} intervals with cooldown ${cooldownMinutes} minutes, alternate ${order.phrase}`,
-            `not plain timers: ${warmupMinutes} min warmup, ${countText} ${duration} work/rest intervals in the middle, ${cooldownMinutes} min cooldown`,
+            `not plain timers: ${warmupMinutes} min warmup, ${countText} ${duration} ${order.words} intervals in the middle, ${cooldownMinutes} min cooldown`,
           ];
           addUserExpansionSpec(add, "user-around-contrast", templates[variant % templates.length], timers, variant);
           variant += 1;
@@ -2559,8 +2790,8 @@ function addUserAroundContrastSpecs(add) {
   const pairTemplates = [
     ({ warmup, cooldown, count, work, rest, first, second }) =>
       `warmup ${warmup} minutes and cooldown ${cooldown} minutes around ${count} rounds, each round ${work} work and ${rest} rest, start with ${first}`,
-    ({ warmup, cooldown, count, work, rest }) =>
-      `bookend ${count} full blocks with ${warmup} min warmup and ${cooldown} min cooldown; every block has ${work} work plus ${rest} rest`,
+    ({ warmup, cooldown, count, work, rest, first, second }) =>
+      `bookend ${count} full blocks with ${warmup} min warmup and ${cooldown} min cooldown; every block starts with ${first} then ${second}; durations are ${work} work and ${rest} rest`,
     ({ warmup, cooldown, count, work, rest, first, second }) =>
       `${count} ${first}/${second} pairs between ${warmup} minute warmup and ${cooldown} minute cooldown, ${work} work ${rest} rest`,
   ];
@@ -2706,9 +2937,9 @@ function addUserAroundRegressionGuardSpecs(add) {
         const secondDuration = secondKind === "work" ? workDuration : restDuration;
         const templates = [
           `${warmupMinutes} minute warmup around ${countText} full ${order.words} rounds, each ${firstDuration} ${firstKind} then ${secondDuration} ${secondKind}, ${cooldownMinutes} minute cooldown`,
-          `bookend ${countText} blocks with ${warmupMinutes} min warmup and ${cooldownMinutes} min cooldown; every block has ${workDuration} work and ${restDuration} rest`,
+          `bookend ${countText} blocks with ${warmupMinutes} min warmup and ${cooldownMinutes} min cooldown; every block starts with ${firstKind} then ${secondKind}; durations are ${workDuration} work and ${restDuration} rest`,
           `surround ${countText} ${order.words} pairs with warmup ${warmupMinutes} minutes and cooldown ${cooldownMinutes} minutes, work is ${workDuration}, rest is ${restDuration}`,
-          `${warmupMinutes} min warmup, ${countText} complete rounds of ${firstKind} then ${secondKind} around the middle, ${cooldownMinutes} min cooldown`,
+          `${warmupMinutes} min warmup, ${countText} complete rounds of ${firstDuration} ${firstKind} then ${secondDuration} ${secondKind} around the middle, ${cooldownMinutes} min cooldown`,
         ];
         addUserExpansionSpec(
           add,
@@ -3809,6 +4040,338 @@ function addPhase4PSeqLengthSpecs(add) {
   }
 }
 
+function addPhase4QRoleOrderSpecs(add) {
+  addPhase4QAlternatingOrderSpecs(add);
+  addPhase4QBlockOrderSpecs(add);
+  addPhase4QGenericCountBindingSpecs(add);
+  addPhase4QHardEasyLabelSpecs(add);
+  addPhase4QHiddenStressSpecs(add);
+}
+
+function addPhase4QAlternatingOrderSpecs(add) {
+  const endpoints = [
+    [5, 5],
+    [8, 6],
+    [10, 8],
+    [12, 10],
+  ];
+  const counts = [7, 8, 10, 12, 14, 16];
+  const durations = [15, 30, 45, 60, 75, 90];
+  const orders = [
+    { order: ["rest", "work"], slash: "work/rest", phrase: "rest then work" },
+    { order: ["work", "rest"], slash: "rest/work", phrase: "work then rest" },
+  ];
+  const templates = [
+    ({ warmup, cooldown, count, duration, slash, phrase }) =>
+      `${warmup} warmup and ${cooldown} cooldown; exactly ${count} ${duration} ${slash} timers in the middle, ${phrase}`,
+    ({ warmup, cooldown, count, duration, slash, phrase }) =>
+      `middle order override drill: ${slash} is only the type; actual order is ${phrase}; ${count} total ${duration} timers between ${warmup} warmup and ${cooldown} cooldown`,
+    ({ warmup, cooldown, count, duration, first, second }) =>
+      `start the alternating middle with ${first}; then ${second}; make ${count} total ${duration} intervals after ${warmup} warmup before ${cooldown} cooldown`,
+    ({ warmup, cooldown, count, duration, slash, phrase }) =>
+      `do not copy the slash order from ${slash}; use the phrase ${phrase}; ${warmup} warmup, ${count} ${duration} middle timers, ${cooldown} cooldown`,
+  ];
+
+  let variant = 0;
+  for (const count of counts) {
+    for (const seconds of durations) {
+      for (const order of orders) {
+        const [warmupMinutes, cooldownMinutes] = endpoints[variant % endpoints.length];
+        const timers = withEndpoints(warmupMinutes, cooldownMinutes, alternating(count, order.order, seconds, workRestLabels()));
+        const template = templates[variant % templates.length];
+        add(
+          "phase4q-alt-order-curriculum",
+          template({
+            warmup: minuteText(warmupMinutes, variant),
+            cooldown: minuteText(cooldownMinutes, variant + 1),
+            count: wordOrNumber(count, variant),
+            duration: userDurationText(seconds, variant),
+            slash: order.slash,
+            phrase: order.phrase,
+            first: order.order[0],
+            second: order.order[1],
+          }),
+          timers,
+          {
+            split: "train",
+            source: "phase4q-role-order",
+            sourceCategory: "alt-order-phrase-overrides-slash",
+          },
+        );
+        variant += 1;
+      }
+    }
+  }
+}
+
+function addPhase4QBlockOrderSpecs(add) {
+  const cases = [
+    [4, 4, 10, 30, 15, ["rest", "work"], workRestLabels()],
+    [5, 5, 8, 45, 15, ["work", "rest"], workRestLabels()],
+    [8, 8, 6, 30, 15, ["work", "rest"], workRestLabels()],
+    [10, 8, 5, 60, 20, ["rest", "work"], workRestLabels()],
+    [12, 9, 6, 30, 15, ["work", "rest"], workRestLabels()],
+    [6, 6, 7, 45, 20, ["rest", "work"], highLowLabels()],
+    [5, 5, 9, 20, 10, ["work", "rest"], hardEasyLabels()],
+    [8, 6, 4, 90, 30, ["rest", "work"], hardEasyLabels()],
+  ];
+  const templates = [
+    ({ warmup, cooldown, count, work, rest, first, second }) =>
+      `${warmup} warmup, ${count} complete rounds; each round begins with ${first} and then ${second}; work lasts ${work}, rest lasts ${rest}; ${cooldown} cooldown`,
+    ({ warmup, cooldown, count, work, rest, first, second }) =>
+      `around the middle are ${count} full blocks, not alternating singles: ${first} then ${second}; work ${work}, rest ${rest}; endpoints ${warmup} and ${cooldown}`,
+    ({ warmup, cooldown, count, work, rest, first, second }) =>
+      `block order contrast: first atom is ${first}, second atom is ${second}; repeat ${count} blocks between ${warmup} warmup and ${cooldown} cooldown`,
+    ({ warmup, cooldown, count, work, rest, first, second }) =>
+      `bookend ${count} full ${first}/${second} blocks with ${warmup} warmup and ${cooldown} cooldown; durations are ${work} work and ${rest} rest`,
+  ];
+
+  let variant = 0;
+  for (const [warmupMinutes, cooldownMinutes, count, workSeconds, restSeconds, order, labels] of cases) {
+    for (const template of templates) {
+      const timers = withEndpoints(warmupMinutes, cooldownMinutes, pairs(count, order, workSeconds, restSeconds, labels));
+      add(
+        "phase4q-block-order-curriculum",
+        template({
+          warmup: minuteText(warmupMinutes, variant),
+          cooldown: minuteText(cooldownMinutes, variant + 1),
+          count: wordOrNumber(count, variant),
+          work: userDurationText(workSeconds, variant),
+          rest: userDurationText(restSeconds, variant + 1),
+          first: labels[order[0]].toLowerCase(),
+          second: labels[order[1]].toLowerCase(),
+        }),
+        timers,
+        {
+          split: "train",
+          source: "phase4q-role-order",
+          sourceCategory: "block-order-role-contrast",
+        },
+      );
+      variant += 1;
+    }
+  }
+
+  const defaultDurationCases = [
+    [8, 8, 6, 30, 15, ["work", "rest"]],
+    [8, 8, 6, 30, 15, ["rest", "work"]],
+    [10, 8, 5, 30, 15, ["work", "rest"]],
+    [5, 5, 8, 30, 15, ["rest", "work"]],
+  ];
+  const defaultDurationTemplates = [
+    ({ warmup, cooldown, count, first, second }) =>
+      `${warmup} warmup, ${count} complete rounds of ${first} then ${second} around the middle, ${cooldown} cooldown`,
+    ({ warmup, cooldown, count, first, second }) =>
+      `use the standard full-round durations: ${count} blocks, ${first} before ${second}, between ${warmup} warmup and ${cooldown} cooldown`,
+    ({ warmup, cooldown, count, first, second }) =>
+      `${count} complete ${first}/${second} rounds, no explicit durations, bookended by ${warmup} warmup and ${cooldown} cooldown`,
+  ];
+  for (const [warmupMinutes, cooldownMinutes, count, workSeconds, restSeconds, order] of defaultDurationCases) {
+    for (const template of defaultDurationTemplates) {
+      const timers = withEndpoints(warmupMinutes, cooldownMinutes, pairs(count, order, workSeconds, restSeconds, workRestLabels()));
+      add(
+        "phase4q-block-default-duration-curriculum",
+        template({
+          warmup: minuteText(warmupMinutes, variant),
+          cooldown: minuteText(cooldownMinutes, variant + 1),
+          count: wordOrNumber(count, variant),
+          first: order[0],
+          second: order[1],
+        }),
+        timers,
+        {
+          split: "train",
+          source: "phase4q-role-order",
+          sourceCategory: "block-default-duration-role-contrast",
+        },
+      );
+      variant += 1;
+    }
+  }
+}
+
+function addPhase4QGenericCountBindingSpecs(add) {
+  const cases = [
+    [480, 4, 60, 480],
+    [20, 7, 5, 20],
+    [300, 5, 60, 300],
+    [90, 6, 10, 90],
+    [120, 8, 30, 120],
+    [45, 9, 15, 45],
+    [240, 10, 20, 240],
+    [75, 11, 15, 75],
+    [30, 12, 10, 30],
+    [180, 14, 45, 180],
+  ];
+  const templates = [
+    ({ left, middleCount, middle, right }) =>
+      `count binding drill: first block ${left}, then ${middleCount} short timers of ${middle}, and a last block of ${right}`,
+    ({ left, middleCount, middle, right }) =>
+      `use ${middleCount} as the repeat count, not the ${middle} duration count: opening ${left}, middle ${middle}, closing ${right}`,
+    ({ left, middleCount, middle, right }) =>
+      `middle has exactly ${middleCount} copies of ${middle}; endpoints are one ${left} and one ${right}`,
+    ({ left, middleCount, middle, right }) =>
+      `do not confuse one minute with one repeat: start ${left}, repeat ${middle} ${middleCount} times, finish ${right}`,
+    ({ left, middleCount, middle, right }) =>
+      `generic bookend sequence: add ${left}, then repeat ${middleCount} ${middle} timers, then add ${right}`,
+  ];
+
+  let variant = 0;
+  for (const [leftSeconds, middleCount, middleSeconds, rightSeconds] of cases) {
+    for (const template of templates) {
+      add(
+        "phase4q-generic-count-binding",
+        template({
+          left: userDurationText(leftSeconds, variant),
+          middleCount: wordOrNumber(middleCount, variant),
+          middle: userDurationText(middleSeconds, variant + 1),
+          right: userDurationText(rightSeconds, variant + 2),
+        }),
+        genericTimers([
+          [1, leftSeconds],
+          [middleCount, middleSeconds],
+          [1, rightSeconds],
+        ]),
+        {
+          split: "train",
+          source: "phase4q-role-order",
+          sourceCategory: "generic-count-binding",
+        },
+      );
+      variant += 1;
+    }
+  }
+}
+
+function addPhase4QHardEasyLabelSpecs(add) {
+  const cases = [
+    [5, 5, 4, 90, 90, ["work", "rest"]],
+    [8, 8, 6, 45, 45, ["work", "rest"]],
+    [10, 8, 5, 60, 30, ["work", "rest"]],
+    [12, 9, 3, 90, 30, ["work", "rest"]],
+    [5, 5, 4, 90, 90, ["rest", "work"]],
+    [8, 8, 6, 45, 45, ["rest", "work"]],
+  ];
+  const templates = [
+    ({ warmup, cooldown, count, work, rest, first, second }) =>
+      `${warmup} warmup and ${cooldown} cooldown with ${count} rounds of ${first} then ${second}; work ${work}, rest ${rest}`,
+    ({ warmup, cooldown, count, work, rest, first, second }) =>
+      `strict label drill: hard/easy labels for ${count} blocks, ${first} then ${second}, work ${work}, rest ${rest}, endpoints ${warmup} and ${cooldown}`,
+    ({ warmup, cooldown, count, work, rest, first, second }) =>
+      `use Hard for work and Easy for rest: ${count} ${first}/${second} rounds between ${warmup} warmup and ${cooldown} cooldown`,
+  ];
+
+  let variant = 0;
+  for (const [warmupMinutes, cooldownMinutes, count, workSeconds, restSeconds, order] of cases) {
+    for (const template of templates) {
+      const timers = withEndpoints(warmupMinutes, cooldownMinutes, pairs(count, order, workSeconds, restSeconds, hardEasyLabels()));
+      add(
+        "phase4q-hard-easy-label-curriculum",
+        template({
+          warmup: minuteText(warmupMinutes, variant),
+          cooldown: minuteText(cooldownMinutes, variant + 1),
+          count: wordOrNumber(count, variant),
+          work: userDurationText(workSeconds, variant),
+          rest: userDurationText(restSeconds, variant + 1),
+          first: hardEasyLabels()[order[0]].toLowerCase(),
+          second: hardEasyLabels()[order[1]].toLowerCase(),
+        }),
+        timers,
+        {
+          split: "train",
+          source: "phase4q-role-order",
+          sourceCategory: "hard-easy-strict-labels",
+        },
+      );
+      variant += 1;
+    }
+  }
+}
+
+function addPhase4QHiddenStressSpecs(add) {
+  let variant = 0;
+  const addHidden = (category, request, timers, sourceCategory) => {
+    add(category, request, timers, {
+      split: "hidden",
+      hiddenValidation: true,
+      source: "phase4q-hidden-stress",
+      sourceCategory,
+    });
+  };
+
+  const altCases = [
+    [6, 4, 9, 20, ["rest", "work"], "work/rest", "rest then work"],
+    [7, 5, 11, 45, ["work", "rest"], "rest/work", "work then rest"],
+    [9, 9, 13, 75, ["rest", "work"], "work/rest", "rest then work"],
+    [12, 8, 15, 30, ["work", "rest"], "rest/work", "work then rest"],
+    [4, 4, 17, 15, ["rest", "work"], "work/rest", "rest then work"],
+    [10, 6, 7, 90, ["work", "rest"], "rest/work", "work then rest"],
+  ];
+  const altTemplates = [
+    ({ warmup, cooldown, count, duration, slash, phrase }) =>
+      `hidden stress: ${warmup} warmup, ${count} total ${duration} ${slash} intervals, but the written order says ${phrase}, then ${cooldown} cooldown`,
+    ({ warmup, cooldown, count, duration, first, second }) =>
+      `after ${warmup} warmup make ${count} middle timers starting with ${first} then ${second}, each ${duration}; finish ${cooldown} cooldown`,
+  ];
+  for (const [warmupMinutes, cooldownMinutes, count, seconds, order, slash, phrase] of altCases) {
+    const template = altTemplates[variant % altTemplates.length];
+    addHidden(
+      "phase4q-hidden-alt-order",
+      template({
+        warmup: minuteText(warmupMinutes, variant),
+        cooldown: minuteText(cooldownMinutes, variant + 1),
+        count: wordOrNumber(count, variant),
+        duration: userDurationText(seconds, variant),
+        slash,
+        phrase,
+        first: order[0],
+        second: order[1],
+      }),
+      withEndpoints(warmupMinutes, cooldownMinutes, alternating(count, order, seconds, workRestLabels())),
+      "alt-order-transfer",
+    );
+    variant += 1;
+  }
+
+  const blockCases = [
+    [6, 6, 5, 40, 20, ["work", "rest"]],
+    [8, 8, 7, 30, 10, ["rest", "work"]],
+    [11, 9, 4, 75, 25, ["work", "rest"]],
+    [5, 4, 9, 20, 15, ["rest", "work"]],
+  ];
+  for (const [warmupMinutes, cooldownMinutes, count, workSeconds, restSeconds, order] of blockCases) {
+    addHidden(
+      "phase4q-hidden-block-order",
+      `${wordOrNumber(count, variant)} full ${order[0]}/${order[1]} blocks between ${minuteText(warmupMinutes, variant)} warmup and ${minuteText(cooldownMinutes, variant + 1)} cooldown; each block has ${userDurationText(workSeconds, variant)} work and ${userDurationText(restSeconds, variant + 1)} rest`,
+      withEndpoints(warmupMinutes, cooldownMinutes, pairs(count, order, workSeconds, restSeconds, workRestLabels())),
+      "block-order-transfer",
+    );
+    variant += 1;
+  }
+
+  const genericCases = [
+    [600, 6, 30, 600],
+    [15, 9, 5, 15],
+    [210, 4, 45, 240],
+    [45, 13, 10, 45],
+    [90, 8, 20, 120],
+    [300, 12, 15, 300],
+  ];
+  for (const [leftSeconds, middleCount, middleSeconds, rightSeconds] of genericCases) {
+    addHidden(
+      "phase4q-hidden-generic-count",
+      `holdout count binding: one ${userDurationText(leftSeconds, variant)} timer, ${wordOrNumber(middleCount, variant)} short timers of ${userDurationText(middleSeconds, variant + 1)}, one ${userDurationText(rightSeconds, variant + 2)} timer`,
+      genericTimers([
+        [1, leftSeconds],
+        [middleCount, middleSeconds],
+        [1, rightSeconds],
+      ]),
+      "generic-count-transfer",
+    );
+    variant += 1;
+  }
+}
+
 function addUserExpansionSpec(add, category, request, timers, variant, options = {}) {
   const validation = variant % 7 === 0;
   add(category, request, timers, {
@@ -4321,6 +4884,10 @@ function timer(label, durationSeconds, kind) {
 
 function workRestLabels() {
   return { work: "Work", rest: "Rest" };
+}
+
+function workRecoveryLabels() {
+  return { work: "Work", rest: "Recovery" };
 }
 
 function highLowLabels() {

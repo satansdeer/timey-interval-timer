@@ -1,6 +1,6 @@
 # Timey Tiny Model Research And Optimization TODO
 
-Last updated: 2026-05-19
+Last updated: 2026-05-20
 
 This document is the continuity file for pushing Timey's in-browser timer model
 as far as practical on both capability and footprint. It is intended to be
@@ -97,18 +97,20 @@ Current dataset:
 Current best experimental action-language candidate:
 
 - Source checkpoint:
-  `training/seq2seq-runs/phase4p-actions-seqlen-cleanup-lr5e-5/checkpoint-50`
+  `training/seq2seq-runs/phase4w-actions-seqlen-orderhints-generic-cleanup-lr5e-5/checkpoint-500`
 - Dataset:
-  `training/generated-actions-lossless-item-atoms-seqlen-phase4p/`
-- Target format: action plans with length-coded `SEQn` commands, for example
-  `SEQ3 I0 I1 I2`.
-- User format: raw request plus lossless source-backed `Items:` and `Atoms:`
-  annotations.
+  `training/generated-actions-lossless-item-atoms-seqlen-orderhints-phase4q/`
+- Target format: action plans with length-coded `SEQn` commands over
+  deterministic source ids, for example `SEQ3 I0 I1 I2`.
+- User format: raw request plus lossless source-backed `Items:`, `Atoms:`,
+  `ItemCount:`, and `Order:` annotations.
 - Python/HF validation:
-  `191/207` strict, `192/207` semantic, `207/207` parseable, `0/207`
+  `207/207` strict, `207/207` semantic, `207/207` parseable, `0/207`
   semantic-invalid.
 - Hard validation:
-  `55/62` strict, `62/62` parseable, `0/62` semantic-invalid.
+  `62/62` strict, `62/62` parseable, `0/62` semantic-invalid.
+- Hidden validation:
+  `16/16` strict, `16/16` parseable, `0/16` semantic-invalid.
 - Status: not browser-promoted. The production runtime still needs the action
   planner/export path before this checkpoint can replace the deployed DSL
   model.
@@ -1964,6 +1966,112 @@ Conclusion:
 - Next work should either integrate/export this action-language candidate into
   the browser or run a bigger from-scratch curriculum focused on the remaining
   role/order failures. Do not continue Phase 4O/4N checkpoints for this syntax.
+
+### Phase 4Q-W: Role/Order Hints And Hidden Stress
+
+Status: completed 2026-05-20; selected HF checkpoint candidate, not browser
+promoted.
+
+Artifact:
+
+- `training/eval-runs/phase4w-order-hints-100pct/README.md`
+
+Goal:
+
+Turn the Phase 4P action language into a completed tiny-model training unit by
+attacking the remaining valid-but-wrong failures: role order, generic bookend
+counts, and ambiguity around phrases such as `work/rest`, `rest/work`,
+`opening`, `middle`, `closing`, and `between`.
+
+Implementation:
+
+- Added `--phase4q-role-order-data`.
+- Added a hidden validation split to the dataset builder and validation
+  harness.
+- Added train-only Phase 4Q categories:
+  - `phase4q-alt-order-curriculum`: 72 rows
+  - `phase4q-block-order-curriculum`: 9 rows
+  - `phase4q-block-default-duration-curriculum`: 12 rows
+  - `phase4q-generic-count-binding`: 50 rows
+  - `phase4q-hard-easy-label-curriculum`: 9 rows
+- Added hidden validation categories:
+  - `phase4q-hidden-alt-order`: 6 rows
+  - `phase4q-hidden-block-order`: 4 rows
+  - `phase4q-hidden-generic-count`: 6 rows
+- Added `--action-order-hints`, which appends compact lossless `Order:` hints
+  to the prompt, for example:
+  - `O0@...=A0>A1(Rest>Work)`
+  - `O0@...=A1>A0>A2(Timer>Timer>Timer)`
+- Added `ItemCount: N` to the lossless item/atom prompt.
+- Fixed contradictory synthetic data:
+  - pair templates now bind target order to the text;
+  - `hard then rest` became `hard then easy`;
+  - `work, recovery` can preserve the `Recovery` label;
+  - generated `around` contrast rows no longer hard-code `work/rest` when the
+    target order is `rest/work`;
+  - ambiguous default-duration hidden rows were rewritten with explicit
+    durations.
+- Fixed misleading hint extraction:
+  - `and` and `plus` are treated as membership, not order;
+  - adjacent hints are suppressed when the bridge contains `is`, because
+    `work is X, rest is Y` assigns durations rather than order.
+
+Datasets:
+
+- No-order-hint control:
+  `training/generated-actions-lossless-item-atoms-seqlen-phase4q/`
+- Order-hint candidate:
+  `training/generated-actions-lossless-item-atoms-seqlen-orderhints-phase4q/`
+- Both have:
+  - Train rows: 1914
+  - Validation rows: 207
+  - Hard validation rows: 62
+  - Hidden validation rows: 16
+
+Run summary:
+
+| Phase/run | Selected step | Validation strict | Hard strict | Hidden strict | Notes |
+| --- | ---: | ---: | ---: | ---: | --- |
+| Phase 4Q no hints, base | 2500 | 192/207 | not selected | 12/16 | role/order data alone was not enough |
+| Phase 4Q no hints, cleanup | 250 | 193/207 | not selected | 13/16 | small continuation gain |
+| Phase 4R order hints | 2500 | 200/207 | 58/62 | 16/16 | exposed contradictory hints/data |
+| Phase 4S consistency fixes | 3000 | 202/207 | 61/62 | 16/16 | safer data, still short |
+| Phase 4T ItemCount + 3-id hints | 4000 | 206/207 | 61/62 | 14/16 | hidden set caught misleading `and`/`plus` hints |
+| Phase 4V fixed hints | 3500 | 205/207 | 60/62 | 16/16 | robust hidden score, one validation miss remained |
+| Phase 4W prompt fix eval | 0 | 206/207 | not run | not run | suppressing `is` hints fixed one miss |
+| Phase 4W generic cleanup | 500 | 207/207 | 62/62 | 16/16 | selected checkpoint |
+
+Selected checkpoint:
+
+```text
+training/seq2seq-runs/phase4w-actions-seqlen-orderhints-generic-cleanup-lr5e-5/checkpoint-500
+```
+
+Selected result:
+
+- Validation: 207/207 strict, 207/207 semantic, 207/207 parseable,
+  0/207 semantic-invalid.
+- Hard validation: 62/62 strict, 62/62 semantic, 62/62 parseable,
+  0/62 semantic-invalid.
+- Hidden validation: 16/16 strict, 16/16 semantic, 16/16 parseable,
+  0/16 semantic-invalid.
+
+Conclusion:
+
+- A tiny T5 model can reach 100% on the current fixed validation, hard, and
+  small hidden sets when the output language is action-oriented and the prompt
+  gives compact lossless structure.
+- The main gain came from reducing syntactic and order-reasoning burden, not
+  from asking the model to reason harder.
+- Hidden validation was essential. It caught the Phase 4T regression where the
+  visible validation improved but `and`/`plus` order hints taught the wrong
+  behavior.
+- Some earlier "model errors" were actually data or prompt-contract errors.
+  Fixing contradictory synthetic rows and ambiguous defaults was necessary
+  before the model could converge cleanly.
+- This is a completed bloggable unit, but not a production deployment. The app
+  still needs an action-plan browser runtime/export path and browser ONNX eval
+  before this checkpoint can replace the deployed Phase 4H DSL model.
 
 ### Phase 5: Quantization-Aware Continuation
 

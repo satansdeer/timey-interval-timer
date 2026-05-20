@@ -233,12 +233,13 @@ not improve the raw browser gate, so Phase 4I was not promoted.
 The action-language experiments move concrete values into lossless annotations
 and ask the tiny model to emit parser-backed action plans instead of direct DSL.
 The strongest current candidate is recorded in
-`training/eval-runs/phase4p-seq-length-scratch/`. It uses source-ordered
-`Items:` plus `Atoms:` annotations and length-coded `SEQn` commands such as
-`SEQ3 I0 I1 I2`. Training from `google/t5-efficient-tiny` reached `191/207`
-strict, `192/207` semantic, `207/207` parseable validation, and `55/62` hard
-validation. It is not browser-promoted yet because the deployed runtime still
-needs the action-plan extraction/export path.
+`training/eval-runs/phase4w-order-hints-100pct/`. It uses source-ordered
+`Items:` plus `Atoms:` annotations, `ItemCount:`, compact `Order:` hints, and
+length-coded `SEQn` commands such as `SEQ3 I0 I1 I2`. Continuing the Phase 4V
+order-hint checkpoint with a narrow generic cleanup reached `207/207` strict,
+`207/207` semantic, `207/207` parseable validation, `62/62` hard validation,
+and `16/16` hidden validation. It is not browser-promoted yet because the
+deployed runtime still needs the action-plan extraction/export path.
 
 ## Results
 
@@ -256,6 +257,7 @@ Current local scores:
 | Phase 4H checkpoint | beam 8 | 185/207 | 207/207 | 0/207 |
 | Phase 4I browser-residual best HF step | beam 8 | 187/207 | 207/207 | 0/207 |
 | Phase 4P action `SEQn` checkpoint | beam 4 | 191/207 | 207/207 | 0/207 |
+| Phase 4W action order-hint checkpoint | beam 4 | 207/207 | 207/207 | 0/207 |
 
 The compressed repeat syntax removed the long-output counting failures that made
 the tiny model unreliable. The label-copy continuation fixed the remaining
@@ -288,12 +290,12 @@ The user-request expansion was measured in
 plain-timer `user-generic-surface` cases are now covered by deterministic
 generic-sequence repair in the browser path.
 
-The next model-first experiment should not just repeat exact residual rows. It
-should either improve the training objective/curriculum around count-duration
-copying, or change architecture/decoding so the browser model cannot collapse
-generic endpoint and middle-duration slots. A checkpoint remains blocked from
-model-first promotion unless raw Python/HF semantic-invalid is 0/207 and raw
-browser ONNX testing improves by category.
+The Phase 4W action-language run is the first local tiny checkpoint to hit the
+current fixed validation and hard validation sets exactly. The remaining
+promotion work is runtime work, not another immediate training sweep: implement
+the browser action-plan extraction/export path, then measure raw browser ONNX
+output by category. A checkpoint remains blocked from production promotion
+unless browser ONNX testing preserves the Python/HF behavior.
 
 ## Browser Export
 
