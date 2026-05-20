@@ -1,0 +1,128 @@
+{
+  "model": "training/seq2seq-runs/phase4n-actions-lossless-item-atoms-cleanup-lr5e-5/checkpoint-250",
+  "device": "mps",
+  "trainRecords": 1501,
+  "effectiveTrainRecords": 1501,
+  "validationRecords": 62,
+  "generation": {
+    "inputFormat": "compact",
+    "evalBatchSize": 8,
+    "maxNewTokens": 64,
+    "numBeams": 4,
+    "repetitionPenalty": 1.0,
+    "noRepeatNgramSize": 0,
+    "lengthPenalty": 1.0,
+    "earlyStopping": false
+  },
+  "training": {
+    "trainOrder": "shuffle",
+    "learningRate": 1e-05,
+    "batchSize": 8,
+    "weightDecay": 0.01,
+    "maxGradNorm": 1.0,
+    "categoryWeight": {},
+    "trainCategory": [],
+    "excludeTrainCategory": []
+  },
+  "steps": [
+    {
+      "step": 0,
+      "parseable": 62,
+      "parseableRate": 1.0,
+      "strictExact": 50,
+      "strictExactRate": 0.8065,
+      "semanticExact": 50,
+      "semanticExactRate": 0.8065,
+      "semanticInvalid": 0,
+      "semanticInvalidRate": 0.0,
+      "categorySummary": [
+        {
+          "category": "generic-position-hard",
+          "count": 10,
+          "parseable": 10,
+          "strictExact": 6,
+          "semanticExact": 6,
+          "semanticInvalid": 0,
+          "parseableRate": 1.0,
+          "strictExactRate": 0.6,
+          "semanticExactRate": 0.6,
+          "semanticInvalidRate": 0.0
+        },
+        {
+          "category": "user-label-surface",
+          "count": 3,
+          "parseable": 3,
+          "strictExact": 2,
+          "semanticExact": 2,
+          "semanticInvalid": 0,
+          "parseableRate": 1.0,
+          "strictExactRate": 0.6667,
+          "semanticExactRate": 0.6667,
+          "semanticInvalidRate": 0.0
+        },
+        {
+          "category": "user-around-regression-guard",
+          "count": 13,
+          "parseable": 13,
+          "strictExact": 10,
+          "semanticExact": 10,
+          "semanticInvalid": 0,
+          "parseableRate": 1.0,
+          "strictExactRate": 0.7692,
+          "semanticExactRate": 0.7692,
+          "semanticInvalidRate": 0.0
+        },
+        {
+          "category": "user-around-contrast",
+          "count": 20,
+          "parseable": 20,
+          "strictExact": 16,
+          "semanticExact": 16,
+          "semanticInvalid": 0,
+          "parseableRate": 1.0,
+          "strictExactRate": 0.8,
+          "semanticExactRate": 0.8,
+          "semanticInvalidRate": 0.0
+        },
+        {
+          "category": "generic-timers-hard",
+          "count": 6,
+          "parseable": 6,
+          "strictExact": 6,
+          "semanticExact": 6,
+          "semanticInvalid": 0,
+          "parseableRate": 1.0,
+          "strictExactRate": 1.0,
+          "semanticExactRate": 1.0,
+          "semanticInvalidRate": 0.0
+        },
+        {
+          "category": "user-duration-surface",
+          "count": 2,
+          "parseable": 2,
+          "strictExact": 2,
+          "semanticExact": 2,
+          "semanticInvalid": 0,
+          "parseableRate": 1.0,
+          "strictExactRate": 1.0,
+          "semanticExactRate": 1.0,
+          "semanticInvalidRate": 0.0
+        },
+        {
+          "category": "user-generic-surface",
+          "count": 8,
+          "parseable": 8,
+          "strictExact": 8,
+          "semanticExact": 8,
+          "semanticInvalid": 0,
+          "parseableRate": 1.0,
+          "strictExactRate": 1.0,
+          "semanticExactRate": 1.0,
+          "semanticInvalidRate": 0.0
+        }
+      ],
+      "seconds": 2.704,
+      "predictions": "training/seq2seq-runs/phase4n-actions-lossless-item-atoms-hard-eval/predictions-step-0.jsonl"
+    }
+  ]
+}

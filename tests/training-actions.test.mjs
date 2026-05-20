@@ -107,4 +107,73 @@ assert.deepEqual(
   [],
 );
 
+const losslessItemRecords = buildTimerSftExamples({
+  targetFormat: "actions",
+  userFormat: "lossless-items",
+  includePhase4HardData: true,
+  includeUserRequestExpansion: true,
+});
+const losslessItemRecord = losslessItemRecords.find(
+  (record) => record.metadata.userRequest === "8 minute timer, 4 one minute timers, 8 minute timer",
+);
+assert.ok(losslessItemRecord);
+assert.match(losslessItemRecord.messages[1].content, /^Request: 8 minute timer, 4 one minute timers, 8 minute timer\nCounts: /);
+assert.match(losslessItemRecord.messages[1].content, /Items: I0@0:8=8m:Timer; I1@18:28=1m:Timer; I2@37:45=8m:Timer/);
+assert.equal(losslessItemRecord.messages[2].content, "ADD I0\nREP C0 I1\nADD I2\nEND");
+assert.deepEqual(
+  compareTimerOutputs(
+    losslessItemRecord.metadata.expectedTimers,
+    parseTimerActions(losslessItemRecord.messages[2].content, losslessItemRecord.metadata.actionSlots).timers,
+  ),
+  [],
+);
+
+const itemSequenceRecord = losslessItemRecords.find(
+  (record) => record.metadata.userRequest === "30 seconds: Plank, 45 seconds: Squats, 1 minute: Rest",
+);
+assert.ok(itemSequenceRecord);
+assert.match(itemSequenceRecord.messages[1].content, /Items: I0@0:10,12:17=30s:Plank; I1@19:29,31:37=45s:Squats; I2@39:47,49:53=1m:Rest/);
+assert.equal(itemSequenceRecord.messages[2].content, "SEQ I0 I1 I2\nEND");
+assert.deepEqual(
+  compareTimerOutputs(
+    itemSequenceRecord.metadata.expectedTimers,
+    parseTimerActions(itemSequenceRecord.messages[2].content, itemSequenceRecord.metadata.actionSlots).timers,
+  ),
+  [],
+);
+
+const hybridItemAtomRecords = buildTimerSftExamples({
+  targetFormat: "actions",
+  userFormat: "lossless-item-atoms",
+  includePhase4HardData: true,
+  includeUserRequestExpansion: true,
+});
+const hybridSequenceRecord = hybridItemAtomRecords.find(
+  (record) => record.metadata.userRequest === "30 seconds: Plank, 45 seconds: Squats, 1 minute: Rest",
+);
+assert.ok(hybridSequenceRecord);
+assert.match(hybridSequenceRecord.messages[1].content, /Items: I0@0:10,12:17=30s:Plank; I1@19:29,31:37=45s:Squats; I2@39:47,49:53=1m:Rest/);
+assert.match(hybridSequenceRecord.messages[1].content, /Atoms: A0@0:10,12:17=30s:Plank/);
+assert.equal(hybridSequenceRecord.messages[2].content, "SEQ I0 I1 I2\nEND");
+assert.deepEqual(
+  compareTimerOutputs(
+    hybridSequenceRecord.metadata.expectedTimers,
+    parseTimerActions(hybridSequenceRecord.messages[2].content, hybridSequenceRecord.metadata.actionSlots).timers,
+  ),
+  [],
+);
+
+const hybridGenericRecord = hybridItemAtomRecords.find(
+  (record) => record.metadata.userRequest === "8 minute timer, 4 one minute timers, 8 minute timer",
+);
+assert.ok(hybridGenericRecord);
+assert.equal(hybridGenericRecord.messages[2].content, "ADD A0\nREP C0 A1\nADD A0\nEND");
+assert.deepEqual(
+  compareTimerOutputs(
+    hybridGenericRecord.metadata.expectedTimers,
+    parseTimerActions(hybridGenericRecord.messages[2].content, hybridGenericRecord.metadata.actionSlots).timers,
+  ),
+  [],
+);
+
 console.log("training action target tests passed");

@@ -1736,6 +1736,90 @@ Conclusion:
   `ADD` syntax. Next work should improve explicit-sequence atom representation,
   probably by adding a source-ordered `Items:` list or better atom ordering.
 
+### Phase 4N: Source-Ordered Items + Atom Hybrid
+
+Status: completed experiment 2026-05-20; selected checkpoint candidate.
+
+Artifact:
+
+- `training/eval-runs/phase4n-lossless-item-atoms/README.md`
+
+Goal:
+
+Fix explicit label-copy and exact sequence rows by adding source-ordered
+`Items:` ids while preserving the atom-command behavior that already works for
+structural timer rows.
+
+Key implementation:
+
+- Added `--user-format lossless-items`.
+- Added `--user-format lossless-item-atoms`.
+- Added `I0`, `I1`, ... item slots to action metadata.
+- Extended `parseTimerActions` so `ADD`, `SEQ`, `REP`, `ALT`, and `BLOCK` can
+  resolve item ids or atom ids.
+- Added direct colon item extraction so exact timer mentions produce monotonic
+  source-order ids:
+
+```text
+Request: 30 seconds: Plank, 45 seconds: Squats, 1 minute: Rest
+Items: I0@0:10,12:17=30s:Plank; I1@19:29,31:37=45s:Squats; I2@39:47,49:53=1m:Rest
+Atoms: A0@0:10,12:17=30s:Plank; ...
+
+SEQ I0 I1 I2
+END
+```
+
+Datasets:
+
+- All-item: `training/generated-actions-lossless-items-phase4i/`
+  - Train rows: 1478
+  - Validation rows: 207
+  - Hard validation rows: 62
+  - Result: useful label-copy signal, but structural regressions.
+- Hybrid item/atom: `training/generated-actions-lossless-item-atoms-phase4i/`
+  - Train rows: 1501
+  - Validation rows: 207
+  - Hard validation rows: 62
+  - `I` item targets: 214 / 1708, all direct `SEQ` rows.
+  - Structural rows keep `A` atom targets.
+
+Runs:
+
+| Run | Source | Best step | Strict | Parseable | Semantic-invalid | Result |
+| --- | --- | ---: | ---: | ---: | ---: | --- |
+| `phase4n-actions-lossless-items-cleanup-v2-lr5e-5` | Phase 4L selected checkpoint | 500 | 158/207 | 199/207 | 0/207 | all-item output regressed structural rows |
+| `phase4n-actions-lossless-item-atoms-cleanup-lr5e-5` | Phase 4M selected checkpoint | 250 | 169/207 | 207/207 | 0/207 | selected hybrid result |
+| `phase4n-actions-lossless-item-atoms-polish-lr1e-5` | hybrid checkpoint-250 | 0 | 169/207 | 207/207 | 0/207 | lower-LR polish did not improve |
+
+Hard validation:
+
+- Hybrid checkpoint-250: 50/62 strict, 62/62 parseable, 0 semantic-invalid.
+
+Selected checkpoint:
+
+`training/seq2seq-runs/phase4n-actions-lossless-item-atoms-cleanup-lr5e-5/checkpoint-250`
+
+Category deltas versus Phase 4M selected:
+
+- `explicit-label-copy`: 7/22 -> 14/22
+- `explicit-sequence`: 0/1 -> 0/1
+- `user-label-surface`: 0/3 -> 2/3
+- `count-pairs`: 22/22 -> 22/22
+- `generic-position`: 5/5 -> 5/5
+- `generic-position-hard`: 5/10 -> 6/10
+- `user-generic-surface`: 5/8 -> 8/8
+- `individual-middle`: 26/26 -> 21/26
+
+Conclusion:
+
+- The all-item target language was too disruptive.
+- The hybrid target language is a real improvement: source-ordered items help
+  direct sequence copying, while atom targets preserve solved structure.
+- Do not polish blindly from the selected checkpoint; the first lower-LR polish
+  reduced accuracy.
+- Next high-value work should target the remaining errors directly:
+  anti-repeat `SEQ` rows and work/rest or high/low order contrasts.
+
 ### Phase 5: Quantization-Aware Continuation
 
 Status: pending, only do this if Phase 2 int4/mixed quantization causes useful
