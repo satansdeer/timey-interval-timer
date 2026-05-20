@@ -1820,6 +1820,66 @@ Conclusion:
 - Next high-value work should target the remaining errors directly:
   anti-repeat `SEQ` rows and work/rest or high/low order contrasts.
 
+### Phase 4O: Targeted Residual Cleanup
+
+Status: completed experiment 2026-05-20; no new checkpoint selected.
+
+Artifact:
+
+- `training/eval-runs/phase4o-residual-cleanup/README.md`
+
+Goal:
+
+Test whether the Phase 4N residual errors can be fixed with targeted train-only
+rows:
+
+- anti-repeat direct `SEQ` rows
+- rest/work and high/low order contrasts
+- hard generic bookend/count contrasts
+
+Implementation:
+
+- Added `--phase4o-residual-data`.
+- Added train-only categories:
+  - `phase4o-seq-anti-repeat`: 48 rows
+  - `phase4o-order-contrast`: 60 rows
+  - `phase4o-generic-position`: 81 rows
+- Generated `training/generated-actions-lossless-item-atoms-phase4o/`.
+  - Train rows: 1690
+  - Validation rows: 207
+  - Hard validation rows: 62
+- Fixed `validate-timer-sft.mjs` so duplicate requests are allowed when either
+  duplicate record has `metadata.duplicateOk`.
+
+Runs:
+
+| Run | Training | Best validation | Parseable | Conclusion |
+| --- | --- | ---: | ---: | --- |
+| `phase4o-actions-residual-cleanup-lr5e-6` | all Phase 4O rows, LR `5e-6` | step 0: 169/207 | 207/207 | training regressed to 162/207 by step 25 |
+| `phase4o-actions-residual-cleanup-lr5e-7` | all Phase 4O rows, LR `5e-7` | step 0/25/50/100: 169/207 | 207/207 | stable, no improvement; step 250 regressed to 166/207 |
+| `phase4o-actions-order-generic-lr5e-6` | excluded anti-repeat rows, LR `5e-6` | step 0/25: 169/207 | 207/207 | no improvement; later regression |
+| `phase4o-decode-rp105-beam4` | decode-only repetition penalty `1.05` | 169/207 | 207/207 | no change |
+| `phase4o-decode-nr2-rp105-beam4` | global no-repeat ngram `2` | 63/207 | 187/207 | fixes direct `SEQ` copy but breaks structural commands |
+
+Hard validation:
+
+- `phase4o-actions-residual-cleanup-lr5e-7/checkpoint-100`: 50/62 strict,
+  62/62 parseable, 0 semantic-invalid.
+
+Conclusion:
+
+- Phase 4N remains selected:
+  `training/seq2seq-runs/phase4n-actions-lossless-item-atoms-cleanup-lr5e-5/checkpoint-250`
+- Phase 4O residual SFT did not improve validation or hard validation.
+- Anti-repeat natural-language examples made the tail-repeat failure worse at
+  normal cleanup LR.
+- The global no-repeat decode probe shows the remaining direct `SEQ` errors are
+  decode-sensitive, but global no-repeat is too blunt because valid structural
+  commands repeat op/id tokens.
+- Next useful direction is not more broad residual continuation. Prototype a
+  narrow `SEQ I...` decoder constraint or an explicit sequence-length action
+  representation, then rerun the fixed validation.
+
 ### Phase 5: Quantization-Aware Continuation
 
 Status: pending, only do this if Phase 2 int4/mixed quantization causes useful

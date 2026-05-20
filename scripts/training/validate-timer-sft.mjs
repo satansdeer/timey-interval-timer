@@ -16,10 +16,11 @@ for (const path of args.paths) {
     if (request) {
       const normalized = request.toLowerCase().replace(/\s+/g, " ").trim();
       const duplicateAllowed = Boolean(record.metadata?.duplicateOk);
-      if (userRequests.has(normalized) && !duplicateAllowed) {
+      const existingDuplicateAllowed = userRequests.get(normalized) === true;
+      if (userRequests.has(normalized) && !duplicateAllowed && !existingDuplicateAllowed) {
         throw new Error(`${path}: duplicate user request "${request}"`);
       }
-      userRequests.set(normalized, userRequests.get(normalized) || duplicateAllowed);
+      userRequests.set(normalized, existingDuplicateAllowed || duplicateAllowed);
     }
   }
 

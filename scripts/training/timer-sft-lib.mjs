@@ -93,6 +93,7 @@ export function buildTimerSftExamples({
   includeUserRequestExpansion = false,
   includePhase4HResidualData = false,
   includePhase4IBrowserResidualData = false,
+  includePhase4OResidualData = false,
   targetFormat = DEFAULT_TARGET_FORMAT,
   userFormat = DEFAULT_USER_FORMAT,
   systemPrompt = null,
@@ -114,6 +115,7 @@ export function buildTimerSftExamples({
     includeUserRequestExpansion,
     includePhase4HResidualData,
     includePhase4IBrowserResidualData,
+    includePhase4OResidualData,
   })) {
     if (isNaturalRequestUserFormat(userFormat) && spec.correctionRequest) continue;
 
@@ -1592,6 +1594,7 @@ function buildSpecs({
   includeUserRequestExpansion = false,
   includePhase4HResidualData = false,
   includePhase4IBrowserResidualData = false,
+  includePhase4OResidualData = false,
 } = {}) {
   const specs = [];
   const add = (category, request, timers, options = {}) => {
@@ -1612,6 +1615,7 @@ function buildSpecs({
   if (includeUserRequestExpansion) addUserRequestExpansionSpecs(add);
   if (includePhase4HResidualData) addPhase4HResidualSpecs(add);
   if (includePhase4IBrowserResidualData) addPhase4IBrowserResidualSpecs(add);
+  if (includePhase4OResidualData) addPhase4OResidualSpecs(add);
 
   return specs;
 }
@@ -3377,6 +3381,274 @@ function addPhase4IBrowserResidualSpecs(add) {
         source: "phase4i-browser-raw-residual",
         sourceCategory: spec.sourceCategory,
       });
+    }
+  }
+}
+
+function addPhase4OResidualSpecs(add) {
+  addPhase4OSeqAntiRepeatSpecs(add);
+  addPhase4OOrderContrastSpecs(add);
+  addPhase4OGenericPositionSpecs(add);
+}
+
+function addPhase4OSeqAntiRepeatSpecs(add) {
+  const cases = [
+    [
+      ["Plank", 30, "other"],
+      ["Squats", 30, "other"],
+      ["Rest", 30, "rest"],
+    ],
+    [
+      ["Warmup", 180, "warmup"],
+      ["Hard effort", 30, "work"],
+      ["Easy spin", 30, "rest"],
+      ["Warmdown", 180, "cooldown"],
+    ],
+    [
+      ["Jump rope", 60, "other"],
+      ["Rest", 20, "rest"],
+      ["Shadow boxing", 60, "other"],
+      ["Rest", 20, "rest"],
+    ],
+    [
+      ["Work", 90, "work"],
+      ["Rest", 45, "rest"],
+      ["Work", 90, "work"],
+      ["Rest", 45, "rest"],
+    ],
+    [
+      ["Round A", 40, "other"],
+      ["Round B", 40, "other"],
+      ["Shake out", 20, "other"],
+      ["Recover", 30, "rest"],
+    ],
+    [
+      ["Prep", 120, "other"],
+      ["Sprint", 30, "other"],
+      ["Breathe out", 45, "other"],
+      ["Reset", 30, "other"],
+    ],
+    [
+      ["Bear crawl", 45, "other"],
+      ["Rest", 15, "rest"],
+      ["Bear plank", 45, "other"],
+      ["Rest", 15, "rest"],
+      ["Cooldown", 60, "cooldown"],
+    ],
+    [
+      ["Focus", 15, "other"],
+      ["Reach", 15, "other"],
+      ["Balance", 15, "other"],
+      ["Hold", 15, "other"],
+    ],
+  ];
+  const templates = [
+    (parts) => `exactly these timers once: ${parts.join(", ")}`,
+    (parts) => `stop after the last item: ${parts.join("; ")}`,
+    (parts) => `copy this ordered list once: ${parts.join(" / ")}`,
+    (parts, count) => `sequence has ${count} items only: ${parts.join(", then ")}`,
+    (parts) => `do not duplicate the final timer: ${parts.join("; ")}`,
+    (parts) => `one pass through this list, no repeated tail: ${parts.join(" / ")}`,
+  ];
+
+  let variant = 0;
+  for (const item of cases) {
+    const timers = item.map(([label, seconds, kind]) => timer(label, seconds, kind));
+    for (const template of templates) {
+      const parts = timers.map((entry, index) => explicitSequencePart(entry, variant + index));
+      add("phase4o-seq-anti-repeat", template(parts, timers.length), timers, {
+        split: "train",
+        source: "phase4o-residual",
+        sourceCategory: "seq-anti-repeat",
+      });
+      variant += 1;
+    }
+  }
+}
+
+function addPhase4OOrderContrastSpecs(add) {
+  const alternatingCases = [
+    [8, 8, 6, 60, ["rest", "work"], workRestLabels()],
+    [8, 8, 6, 60, ["work", "rest"], workRestLabels()],
+    [10, 8, 5, 45, ["rest", "work"], workRestLabels()],
+    [10, 8, 5, 45, ["work", "rest"], workRestLabels()],
+    [12, 9, 8, 30, ["rest", "work"], workRestLabels()],
+    [12, 9, 8, 30, ["work", "rest"], workRestLabels()],
+    [6, 6, 7, 45, ["rest", "work"], highLowLabels()],
+    [6, 6, 7, 45, ["work", "rest"], highLowLabels()],
+    [5, 5, 9, 20, ["rest", "work"], hardEasyLabels()],
+    [5, 5, 9, 20, ["work", "rest"], hardEasyLabels()],
+  ];
+  const alternatingTemplates = [
+    ({ warmup, cooldown, count, duration, first, second }) =>
+      `${warmup} warmup, then ${count} ${duration} alternating timers starting with ${first}, then ${second}, then ${cooldown} cooldown`,
+    ({ warmup, cooldown, count, duration, first, second }) =>
+      `the first middle timer is ${first}; the second is ${second}; ${warmup} warmup, ${count} ${duration} alterations, ${cooldown} cooldown`,
+    ({ warmup, cooldown, count, duration, first, second }) =>
+      `do not swap order: ${first} then ${second} for ${count} separate ${duration} middle intervals, with ${warmup} warmup and ${cooldown} cooldown`,
+    ({ warmup, cooldown, count, duration, first, second }) =>
+      `middle alternates ${first}/${second} from the first interval; endpoints are ${warmup} warmup and ${cooldown} cooldown`,
+    ({ warmup, cooldown, count, duration, first, second }) =>
+      `start the middle with ${first}, alternate with ${second}, make ${count} total ${duration} intervals between ${warmup} warmup and ${cooldown} cooldown`,
+  ];
+
+  let variant = 0;
+  for (const [warmupMinutes, cooldownMinutes, count, seconds, order, labels] of alternatingCases) {
+    for (const template of alternatingTemplates) {
+      const timers = withEndpoints(warmupMinutes, cooldownMinutes, alternating(count, order, seconds, labels));
+      add(
+        "phase4o-order-contrast",
+        template({
+          warmup: minuteText(warmupMinutes, variant),
+          cooldown: minuteText(cooldownMinutes, variant + 1),
+          count: wordOrNumber(count, variant),
+          duration: userDurationText(seconds, variant),
+          first: labels[order[0]].toLowerCase(),
+          second: labels[order[1]].toLowerCase(),
+        }),
+        timers,
+        {
+          split: "train",
+          source: "phase4o-residual",
+          sourceCategory: "alt-order-contrast",
+        },
+      );
+      variant += 1;
+    }
+  }
+
+  const pairCases = [
+    [8, 8, 4, 60, 30, ["work", "rest"], workRestLabels()],
+    [8, 8, 4, 60, 30, ["rest", "work"], workRestLabels()],
+    [10, 5, 3, 90, 45, ["work", "rest"], workRestLabels()],
+    [10, 5, 3, 90, 45, ["rest", "work"], workRestLabels()],
+    [12, 9, 5, 45, 15, ["work", "rest"], hardEasyLabels()],
+    [12, 9, 5, 45, 15, ["rest", "work"], hardEasyLabels()],
+    [5, 5, 6, 30, 20, ["work", "rest"], highLowLabels()],
+    [5, 5, 6, 30, 20, ["rest", "work"], highLowLabels()],
+  ];
+  const pairTemplates = [
+    ({ warmup, cooldown, count, work, rest, first, second }) =>
+      `${warmup} warmup, ${count} full blocks; each block is ${first} then ${second}; work lasts ${work}, rest lasts ${rest}; ${cooldown} cooldown`,
+    ({ warmup, cooldown, count, work, rest, first, second }) =>
+      `keep the block order ${first} before ${second}: ${count} rounds with ${work} work and ${rest} rest, after ${warmup} warmup and before ${cooldown} cooldown`,
+    ({ warmup, cooldown, count, work, rest, first, second }) =>
+      `not alternating singles: ${count} complete blocks, first ${first} then ${second}, work ${work}, rest ${rest}, plus ${warmup} warmup and ${cooldown} cooldown`,
+    ({ warmup, cooldown, count, work, rest, first, second }) =>
+      `every full block begins with ${first} and ends with ${second}; repeat ${count} blocks between ${warmup} warmup and ${cooldown} cooldown`,
+  ];
+
+  for (const [warmupMinutes, cooldownMinutes, count, workSeconds, restSeconds, order, labels] of pairCases) {
+    for (const template of pairTemplates) {
+      const timers = withEndpoints(warmupMinutes, cooldownMinutes, pairs(count, order, workSeconds, restSeconds, labels));
+      add(
+        "phase4o-order-contrast",
+        template({
+          warmup: minuteText(warmupMinutes, variant),
+          cooldown: minuteText(cooldownMinutes, variant + 1),
+          count: wordOrNumber(count, variant),
+          work: userDurationText(workSeconds, variant),
+          rest: userDurationText(restSeconds, variant + 1),
+          first: labels[order[0]].toLowerCase(),
+          second: labels[order[1]].toLowerCase(),
+        }),
+        timers,
+        {
+          split: "train",
+          source: "phase4o-residual",
+          sourceCategory: "block-order-contrast",
+        },
+      );
+      variant += 1;
+    }
+  }
+}
+
+function addPhase4OGenericPositionSpecs(add) {
+  const bookendCases = [
+    [480, 4, 60, 480],
+    [300, 5, 60, 300],
+    [90, 6, 10, 90],
+    [120, 8, 30, 120],
+    [20, 7, 5, 20],
+    [150, 3, 20, 210],
+    [180, 4, 45, 180],
+    [240, 7, 60, 240],
+    [45, 5, 15, 45],
+    [30, 3, 10, 30],
+  ];
+  const bookendTemplates = [
+    ({ left, middleCount, middle, right }) =>
+      `first block ${left}, then ${middleCount} short timers of ${middle}, and a last block of ${right}`,
+    ({ left, middleCount, middle, right }) =>
+      `put the ${middleCount} ${middle} timers between the opening ${left} timer and the closing ${right} timer`,
+    ({ left, middleCount, middle, right }) =>
+      `the middle count is ${middleCount}, not the endpoint duration: opening ${left}, middle ${middle}, closing ${right}`,
+    ({ left, middleCount, middle, right }) =>
+      `do not use ${middleCount} as an endpoint duration: ${left} first, ${middleCount} timers of ${middle}, ${right} last`,
+    ({ left, middleCount, middle, right }) =>
+      `plain generic timers in this order: one ${left}, ${middleCount} of ${middle}, one ${right}`,
+  ];
+
+  let variant = 0;
+  for (const [leftSeconds, middleCount, middleSeconds, rightSeconds] of bookendCases) {
+    for (const template of bookendTemplates) {
+      add(
+        "phase4o-generic-position",
+        template({
+          left: userDurationText(leftSeconds, variant),
+          middleCount: wordOrNumber(middleCount, variant),
+          middle: userDurationText(middleSeconds, variant + 1),
+          right: userDurationText(rightSeconds, variant + 2),
+        }),
+        genericTimers([
+          [1, leftSeconds],
+          [middleCount, middleSeconds],
+          [1, rightSeconds],
+        ]),
+        {
+          split: "train",
+          source: "phase4o-residual",
+          sourceCategory: "generic-bookend-count-contrast",
+        },
+      );
+      variant += 1;
+    }
+  }
+
+  const countOnlyCases = [
+    [8, 90],
+    [6, 90],
+    [7, 30],
+    [9, 45],
+    [10, 60],
+    [11, 15],
+    [5, 150],
+    [12, 10],
+  ];
+  const countOnlyTemplates = [
+    ({ count, duration }) => `I need ${count} plain ${duration} intervals, no opening or closing timers`,
+    ({ count, duration }) => `exactly ${count} standalone timers of ${duration}; nothing before or after`,
+    ({ count, duration }) => `${count} repeated generic timers, each ${duration}, not bookends`,
+    ({ count, duration }) => `make ${count} separate ${duration} timers only`,
+  ];
+
+  for (const [count, seconds] of countOnlyCases) {
+    for (const template of countOnlyTemplates) {
+      add(
+        "phase4o-generic-position",
+        template({
+          count: wordOrNumber(count, variant),
+          duration: userDurationText(seconds, variant),
+        }),
+        genericTimers([[count, seconds]]),
+        {
+          split: "train",
+          source: "phase4o-residual",
+          sourceCategory: "generic-count-no-bookends",
+        },
+      );
+      variant += 1;
     }
   }
 }
