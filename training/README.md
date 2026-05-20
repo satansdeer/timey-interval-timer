@@ -230,6 +230,16 @@ browser failures from the Phase 4H export. The best Python/HF step reached
 187/207 strict with 0 semantic-invalid, but the exported browser checkpoint did
 not improve the raw browser gate, so Phase 4I was not promoted.
 
+The action-language experiments move concrete values into lossless annotations
+and ask the tiny model to emit parser-backed action plans instead of direct DSL.
+The strongest current candidate is recorded in
+`training/eval-runs/phase4p-seq-length-scratch/`. It uses source-ordered
+`Items:` plus `Atoms:` annotations and length-coded `SEQn` commands such as
+`SEQ3 I0 I1 I2`. Training from `google/t5-efficient-tiny` reached `191/207`
+strict, `192/207` semantic, `207/207` parseable validation, and `55/62` hard
+validation. It is not browser-promoted yet because the deployed runtime still
+needs the action-plan extraction/export path.
+
 ## Results
 
 The current local browser checkpoint is:
@@ -245,6 +255,7 @@ Current local scores:
 | deployed pre-Phase4H checkpoint | beam 4 | 159/207 | 205/207 | 0/207 |
 | Phase 4H checkpoint | beam 8 | 185/207 | 207/207 | 0/207 |
 | Phase 4I browser-residual best HF step | beam 8 | 187/207 | 207/207 | 0/207 |
+| Phase 4P action `SEQn` checkpoint | beam 4 | 191/207 | 207/207 | 0/207 |
 
 The compressed repeat syntax removed the long-output counting failures that made
 the tiny model unreliable. The label-copy continuation fixed the remaining

@@ -16,12 +16,14 @@ import {
 const args = parseArgs(process.argv.slice(2));
 const outDir = resolve(process.cwd(), args.outDir);
 const allRecords = buildTimerSftExamples({
+  actionSeqLength: args.actionSeqLength,
   dslEndToken: args.dslEndToken,
   includePhase4HardData: args.phase4HardData,
   includeUserRequestExpansion: args.userRequestExpansion,
   includePhase4HResidualData: args.phase4HResidualData,
   includePhase4IBrowserResidualData: args.phase4IBrowserResidualData,
   includePhase4OResidualData: args.phase4OResidualData,
+  includePhase4PSeqLengthData: args.phase4PSeqLengthData,
   targetFormat: args.targetFormat,
   userFormat: args.userFormat,
   systemPrompt: getSystemPrompt(args),
@@ -44,12 +46,14 @@ await writeFile(
       datasetVersion: DATASET_VERSION,
       targetFormat: args.targetFormat,
       userFormat: args.userFormat,
+      actionSeqLength: args.targetFormat === "actions" ? args.actionSeqLength : false,
       dslEndToken: args.targetFormat === "dsl" ? args.dslEndToken : false,
       phase4HardData: args.phase4HardData,
       userRequestExpansion: args.userRequestExpansion,
       phase4HResidualData: args.phase4HResidualData,
       phase4IBrowserResidualData: args.phase4IBrowserResidualData,
       phase4OResidualData: args.phase4OResidualData,
+      phase4PSeqLengthData: args.phase4PSeqLengthData,
       qwen3NoThink: args.qwen3NoThink,
       validationRatio: args.validationRatio,
       files: {
@@ -82,12 +86,14 @@ function writeJsonl(path, records) {
 function parseArgs(argv) {
   const parsed = {
     outDir: "training/generated",
+    actionSeqLength: false,
     dslEndToken: false,
     phase4HardData: false,
     userRequestExpansion: false,
     phase4HResidualData: false,
     phase4IBrowserResidualData: false,
     phase4OResidualData: false,
+    phase4PSeqLengthData: false,
     qwen3NoThink: false,
     targetFormat: DEFAULT_TARGET_FORMAT,
     userFormat: DEFAULT_USER_FORMAT,
@@ -98,6 +104,8 @@ function parseArgs(argv) {
     const arg = argv[index];
     if (arg === "--out-dir") {
       parsed.outDir = argv[++index];
+    } else if (arg === "--action-seq-length") {
+      parsed.actionSeqLength = true;
     } else if (arg === "--dsl-end-token") {
       parsed.dslEndToken = true;
     } else if (arg === "--phase4-hard-data") {
@@ -110,6 +118,8 @@ function parseArgs(argv) {
       parsed.phase4IBrowserResidualData = true;
     } else if (arg === "--phase4o-residual-data") {
       parsed.phase4OResidualData = true;
+    } else if (arg === "--phase4p-seq-length-data") {
+      parsed.phase4PSeqLengthData = true;
     } else if (arg === "--qwen3-no-think") {
       parsed.qwen3NoThink = true;
     } else if (arg === "--target-format") {
@@ -146,6 +156,7 @@ function printHelp() {
 
 Options:
   --out-dir <path>             Output directory (default: training/generated)
+  --action-seq-length          Use SEQn action opcodes, for example SEQ3 I0 I1 I2
   --dsl-end-token              End DSL assistant targets with END on a final line
   --phase4-hard-data           Include opt-in hard generic-position/generic-timer rows
   --user-request-expansion     Include opt-in broad user-request and contrast rows
@@ -153,6 +164,7 @@ Options:
   --phase4i-browser-residual-data
                                 Include train-only rows from raw browser misses
   --phase4o-residual-data      Include train-only targeted residual rows after Phase 4N
+  --phase4p-seq-length-data    Include train-only pedagogy rows for SEQn action syntax
   --qwen3-no-think             Append /no_think to the system prompt for Qwen3 non-thinking mode
   --target-format <json|dsl|actions>
                                 Assistant target format (default: json)

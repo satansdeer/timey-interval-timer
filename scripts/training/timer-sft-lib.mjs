@@ -55,6 +55,17 @@ export const ACTION_SYSTEM_PROMPT = [
   "Use slot ids exactly, such as I0, A0, D0, C0, and L0. Do not write raw durations, counts, or labels.",
   "Finish with END on its own final line.",
 ].join(" ");
+export const ACTION_SEQ_LENGTH_SYSTEM_PROMPT = [
+  "You convert natural-language workout timer requests into a Timey action plan.",
+  "The user message keeps the raw request and includes extracted slots for timer items, atoms, durations, counts, and labels.",
+  "Return only action commands using those slots.",
+  "When I item slots are present, use ADD item, SEQn item item ..., REP count item, BLOCK count item item, and ALT count item item.",
+  "When A atom slots are present, use ADD atom, SEQn atom atom ..., REP count atom, BLOCK count atom atom, and ALT count atom atom.",
+  "In SEQn, n is the exact number of item or atom ids that follow, such as SEQ3 I0 I1 I2.",
+  "Otherwise use ADD duration label, REP count duration label, BLOCK count duration label duration label, and ALT count duration label duration label.",
+  "Use slot ids exactly, such as I0, A0, D0, C0, and L0. Do not write raw durations, counts, or labels.",
+  "Finish with END on its own final line.",
+].join(" ");
 export const SYSTEM_PROMPT = JSON_SYSTEM_PROMPT;
 export const QWEN3_NO_THINK_SYSTEM_PROMPT = `${SYSTEM_PROMPT} /no_think`;
 export const QWEN3_DSL_NO_THINK_SYSTEM_PROMPT = `${DSL_SYSTEM_PROMPT} /no_think`;
@@ -88,12 +99,14 @@ const NATURAL_REQUEST_USER_FORMATS = ["natural", "lossless-slots", "lossless-ato
 const LOSSLESS_ACTION_USER_FORMATS = ["lossless-slots", "lossless-atoms", "lossless-items", "lossless-item-atoms"];
 
 export function buildTimerSftExamples({
+  actionSeqLength = false,
   dslEndToken = false,
   includePhase4HardData = false,
   includeUserRequestExpansion = false,
   includePhase4HResidualData = false,
   includePhase4IBrowserResidualData = false,
   includePhase4OResidualData = false,
+  includePhase4PSeqLengthData = false,
   targetFormat = DEFAULT_TARGET_FORMAT,
   userFormat = DEFAULT_USER_FORMAT,
   systemPrompt = null,
@@ -104,7 +117,14 @@ export function buildTimerSftExamples({
   const records = [];
   const seen = new Set();
   const baseSystemPrompt =
-    systemPrompt ?? (targetFormat === "dsl" ? DSL_SYSTEM_PROMPT : targetFormat === "actions" ? ACTION_SYSTEM_PROMPT : JSON_SYSTEM_PROMPT);
+    systemPrompt ??
+    (targetFormat === "dsl"
+      ? DSL_SYSTEM_PROMPT
+      : targetFormat === "actions"
+        ? actionSeqLength
+          ? ACTION_SEQ_LENGTH_SYSTEM_PROMPT
+          : ACTION_SYSTEM_PROMPT
+        : JSON_SYSTEM_PROMPT);
   const resolvedSystemPrompt =
     targetFormat === "dsl" && dslEndToken
       ? `${baseSystemPrompt} Finish with ${DSL_END_TOKEN} on its own final line.`
@@ -116,6 +136,7 @@ export function buildTimerSftExamples({
     includePhase4HResidualData,
     includePhase4IBrowserResidualData,
     includePhase4OResidualData,
+    includePhase4PSeqLengthData,
   })) {
     if (isNaturalRequestUserFormat(userFormat) && spec.correctionRequest) continue;
 
@@ -132,7 +153,7 @@ export function buildTimerSftExamples({
     let actionTarget = null;
     if (targetFormat === "actions") {
       try {
-        actionTarget = formatTimerActions(spec.timers, { slots: actionSlots, atomActions, itemActions, itemSequenceActions });
+        actionTarget = formatTimerActions(spec.timers, { slots: actionSlots, atomActions, itemActions, itemSequenceActions, actionSeqLength });
       } catch (error) {
         if (
           isLosslessActionUserFormat(userFormat) &&
@@ -168,6 +189,7 @@ export function buildTimerSftExamples({
       split: spec.split ?? null,
       targetFormat,
       userFormat,
+      actionSeqLength: targetFormat === "actions" ? Boolean(actionSeqLength) : false,
       dslEndToken: targetFormat === "dsl" ? Boolean(dslEndToken) : false,
       messages: [
         { role: "system", content: resolvedSystemPrompt },
@@ -328,9 +350,12 @@ export function formatTimerDsl(timers, { endToken = false } = {}) {
   return endToken ? `${content}\n${DSL_END_TOKEN}` : content;
 }
 
-export function formatTimerActions(timers, { slots = null, atomActions = false, itemActions = false, itemSequenceActions = false } = {}) {
+export function formatTimerActions(
+  timers,
+  { slots = null, atomActions = false, itemActions = false, itemSequenceActions = false, actionSeqLength = false } = {},
+) {
   const slotter = slots ? createActionSlotResolver(slots, "action slots") : createActionSlotter();
-  const commands = formatActionCommands(timers, slotter, { atomActions, itemActions, itemSequenceActions });
+  const commands = formatActionCommands(timers, slotter, { atomActions, itemActions, itemSequenceActions, actionSeqLength });
   return {
     content: [...commands, DSL_END_TOKEN].join("\n"),
     slots: slotter.toJSON(),
@@ -1296,10 +1321,10 @@ function formatActionHint(hint, slotter, options = {}) {
 
 function formatActionRuns(timers, slotter, options = {}) {
   if (options.itemSequenceActions && timers.length > 1) {
-    return [`SEQ ${timers.map((entry) => formatActionItem(entry, slotter)).join(" ")}`];
+    return [`${formatSeqActionOp(timers.length, options)} ${timers.map((entry) => formatActionItem(entry, slotter)).join(" ")}`];
   }
   if ((options.atomActions || options.itemActions) && timers.length > 1) {
-    return [`SEQ ${timers.map((entry) => formatActionAtom(entry, slotter, options)).join(" ")}`];
+    return [`${formatSeqActionOp(timers.length, options)} ${timers.map((entry) => formatActionAtom(entry, slotter, options)).join(" ")}`];
   }
   const commands = [];
   for (let index = 0; index < timers.length; ) {
@@ -1312,6 +1337,10 @@ function formatActionRuns(timers, slotter, options = {}) {
     index += count;
   }
   return commands;
+}
+
+function formatSeqActionOp(count, options = {}) {
+  return options.actionSeqLength ? `SEQ${count}` : "SEQ";
 }
 
 function formatActionAtom(timer, slotter, { atomActions = false, itemActions = false } = {}) {
@@ -1363,19 +1392,38 @@ function compileActionTokens(tokens, slots, context) {
       }
       continue;
     }
-    if (op === "SEQ") {
+    const seqLength = parseSeqActionOp(op);
+    if (op === "SEQ" || seqLength !== null) {
       const atoms = [];
-      let cursor = index + 1;
-      while (cursor < tokens.length && !isActionOpToken(tokens[cursor])) {
-        const atom = tokens[cursor];
-        if (!isActionItemOrAtomId(atom)) throw new Error(`${commandContext}: SEQ requires item or atom ids`);
-        atoms.push(atom);
-        cursor += 1;
+      if (seqLength !== null) {
+        if (seqLength < 1 || seqLength > MAX_INTERVALS) {
+          throw new Error(`${commandContext}: ${op} count must be between 1 and ${MAX_INTERVALS}`);
+        }
+        for (let offset = 1; offset <= seqLength; offset += 1) {
+          const atom = tokens[index + offset];
+          if (!isActionItemOrAtomId(atom)) throw new Error(`${commandContext}: ${op} requires exactly ${seqLength} item or atom ids`);
+          atoms.push(atom);
+        }
+        const next = tokens[index + seqLength + 1];
+        if (next && !isActionOpToken(next)) {
+          throw new Error(`${commandContext}: ${op} has extra item or atom id ${JSON.stringify(next)}`);
+        }
+        lines.push(...atoms.map((atom) => resolveActionItemOrAtom(atom, slots, commandContext)));
+        index += seqLength + 1;
+        continue;
+      } else {
+        let cursor = index + 1;
+        while (cursor < tokens.length && !isActionOpToken(tokens[cursor])) {
+          const atom = tokens[cursor];
+          if (!isActionItemOrAtomId(atom)) throw new Error(`${commandContext}: SEQ requires item or atom ids`);
+          atoms.push(atom);
+          cursor += 1;
+        }
+        if (atoms.length < 1) throw new Error(`${commandContext}: SEQ requires at least one item or atom`);
+        lines.push(...atoms.map((atom) => resolveActionItemOrAtom(atom, slots, commandContext)));
+        index = cursor;
+        continue;
       }
-      if (atoms.length < 1) throw new Error(`${commandContext}: SEQ requires at least one item or atom`);
-      lines.push(...atoms.map((atom) => resolveActionItemOrAtom(atom, slots, commandContext)));
-      index = cursor;
-      continue;
     }
     if (op === "REP") {
       const count = tokens[index + 1];
@@ -1431,7 +1479,12 @@ function cleanActionToken(token) {
 }
 
 function isActionOpToken(token) {
-  return /^(ADD|SEQ|REP|ALT|BLOCK)$/i.test(String(token ?? ""));
+  return /^(ADD|SEQ\d*|REP|ALT|BLOCK)$/i.test(String(token ?? ""));
+}
+
+function parseSeqActionOp(token) {
+  const match = /^SEQ(\d+)$/i.exec(String(token ?? ""));
+  return match ? Number(match[1]) : null;
 }
 
 function isActionAtomId(token) {
@@ -1595,6 +1648,7 @@ function buildSpecs({
   includePhase4HResidualData = false,
   includePhase4IBrowserResidualData = false,
   includePhase4OResidualData = false,
+  includePhase4PSeqLengthData = false,
 } = {}) {
   const specs = [];
   const add = (category, request, timers, options = {}) => {
@@ -1616,6 +1670,7 @@ function buildSpecs({
   if (includePhase4HResidualData) addPhase4HResidualSpecs(add);
   if (includePhase4IBrowserResidualData) addPhase4IBrowserResidualSpecs(add);
   if (includePhase4OResidualData) addPhase4OResidualSpecs(add);
+  if (includePhase4PSeqLengthData) addPhase4PSeqLengthSpecs(add);
 
   return specs;
 }
@@ -3648,6 +3703,107 @@ function addPhase4OGenericPositionSpecs(add) {
           sourceCategory: "generic-count-no-bookends",
         },
       );
+      variant += 1;
+    }
+  }
+}
+
+function addPhase4PSeqLengthSpecs(add) {
+  const cases = [
+    [
+      ["Plank", 30, "other"],
+      ["Rest", 15, "rest"],
+    ],
+    [
+      ["Plank", 30, "other"],
+      ["Squats", 30, "other"],
+      ["Rest", 30, "rest"],
+    ],
+    [
+      ["Jump rope", 60, "other"],
+      ["Rest", 20, "rest"],
+      ["Shadow boxing", 60, "other"],
+      ["Rest", 20, "rest"],
+    ],
+    [
+      ["Focus", 15, "other"],
+      ["Reach", 15, "other"],
+      ["Balance", 15, "other"],
+      ["Hold", 15, "other"],
+      ["Reset", 15, "other"],
+    ],
+    [
+      ["Work", 30, "work"],
+      ["Rest", 15, "rest"],
+      ["Work", 30, "work"],
+      ["Rest", 15, "rest"],
+      ["Work", 30, "work"],
+      ["Rest", 15, "rest"],
+    ],
+    [
+      ["Warmup", 120, "warmup"],
+      ["Hard effort", 30, "work"],
+      ["Easy spin", 45, "rest"],
+      ["Warmdown", 120, "cooldown"],
+    ],
+    [
+      ["Round A", 40, "other"],
+      ["Round B", 40, "other"],
+      ["Round C", 40, "other"],
+      ["Round D", 40, "other"],
+    ],
+    [
+      ["Breathing reset", 30, "other"],
+      ["Dead bug", 45, "other"],
+      ["Recovery", 30, "rest"],
+      ["Side plank", 45, "other"],
+      ["Shake out", 20, "other"],
+    ],
+    [
+      ["High intensity", 45, "work"],
+      ["Low intensity", 45, "rest"],
+      ["High intensity", 45, "work"],
+      ["Low intensity", 45, "rest"],
+    ],
+    [
+      ["Bear crawl", 45, "other"],
+      ["Rest", 15, "rest"],
+      ["Bear plank", 45, "other"],
+      ["Rest", 15, "rest"],
+      ["Cooldown", 60, "cooldown"],
+    ],
+    [
+      ["March", 20, "other"],
+      ["Reach", 20, "other"],
+      ["March", 20, "other"],
+    ],
+    [
+      ["Prep", 90, "other"],
+      ["Sprint", 30, "other"],
+      ["Breathe out", 45, "other"],
+      ["Reset", 30, "other"],
+      ["Cooldown", 90, "cooldown"],
+    ],
+  ];
+  const templates = [
+    (parts, count, variant) => `sequence length drill with exactly ${wordOrNumber(count, variant)} listed items. ${parts.join(", ")}`,
+    (parts, count, variant) => `there are ${wordOrNumber(count, variant)} source-ordered timers; copy all of them once. ${parts.join("; ")}`,
+    (parts, count, variant) => `copy ${wordOrNumber(count, variant)} timer items and stop after item ${count}. ${parts.join(" / ")}`,
+    (parts, count, variant) => `the sequence length is ${wordOrNumber(count, variant)}; do not add a tail item. ${parts.join(", then ")}`,
+    (parts, count, variant) => `${wordOrNumber(count, variant)} item sequence, use every item once in order. ${parts.join("; ")}`,
+    (parts, count, variant) => `one length-coded list in plain language with ${wordOrNumber(count, variant)} items. ${parts.join(" / ")}`,
+  ];
+
+  let variant = 0;
+  for (const item of cases) {
+    const timers = item.map(([label, seconds, kind]) => timer(label, seconds, kind));
+    for (const template of templates) {
+      const parts = timers.map((entry, index) => explicitSequencePart(entry, variant + index));
+      add("phase4p-seq-length-pedagogy", template(parts, timers.length, variant), timers, {
+        split: "train",
+        source: "phase4p-seq-length",
+        sourceCategory: "seq-length-pedagogy",
+      });
       variant += 1;
     }
   }

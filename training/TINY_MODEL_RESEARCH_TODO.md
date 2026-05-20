@@ -16,8 +16,10 @@ and latency low.
 Current strategy:
 
 1. Use a tiny seq2seq model for fuzzy natural-language interpretation.
-2. Emit compact Timey DSL, not JSON.
-3. Parse all model output with the same `timer-dsl.js` parser used for human
+2. Keep production output parser-backed and compact: the deployed model emits
+   Timey DSL today, while current model-first experiments emit Timey action
+   plans over deterministic `Items:`/`Atoms:` annotations.
+3. Parse all model output with the same shared parser stack used for human
    DSL input.
 4. Let deterministic code own cases that are provable without model inference:
    direct DSL input, simple generic timer lists, and fallback/corrections.
@@ -91,6 +93,25 @@ Current dataset:
   `4m + 5x30s + 4m: Timer`.
 - `around` may appear in natural-language user prompts and labels, but it is
   not a valid grouped target DSL token.
+
+Current best experimental action-language candidate:
+
+- Source checkpoint:
+  `training/seq2seq-runs/phase4p-actions-seqlen-cleanup-lr5e-5/checkpoint-50`
+- Dataset:
+  `training/generated-actions-lossless-item-atoms-seqlen-phase4p/`
+- Target format: action plans with length-coded `SEQn` commands, for example
+  `SEQ3 I0 I1 I2`.
+- User format: raw request plus lossless source-backed `Items:` and `Atoms:`
+  annotations.
+- Python/HF validation:
+  `191/207` strict, `192/207` semantic, `207/207` parseable, `0/207`
+  semantic-invalid.
+- Hard validation:
+  `55/62` strict, `62/62` parseable, `0/62` semantic-invalid.
+- Status: not browser-promoted. The production runtime still needs the action
+  planner/export path before this checkpoint can replace the deployed DSL
+  model.
 
 Current opt-in expanded dataset:
 
@@ -1879,6 +1900,70 @@ Conclusion:
 - Next useful direction is not more broad residual continuation. Prototype a
   narrow `SEQ I...` decoder constraint or an explicit sequence-length action
   representation, then rerun the fixed validation.
+
+### Phase 4P: Length-Coded `SEQn` Actions From Scratch
+
+Status: completed 2026-05-20; selected HF checkpoint candidate, not browser
+promoted.
+
+Artifact:
+
+- `training/eval-runs/phase4p-seq-length-scratch/README.md`
+
+Goal:
+
+Test the user's basin hypothesis: after enough target-language changes, a
+continuation checkpoint may be anchored to older syntax. The experiment changed
+open-ended sequence actions from `SEQ I0 I1 I2` to length-coded
+`SEQ3 I0 I1 I2`, then trained from the base tiny model with a small
+sequence-length pedagogy set.
+
+Implementation:
+
+- Added `--action-seq-length`.
+- Added `ACTION_SEQ_LENGTH_SYSTEM_PROMPT`.
+- Added `--phase4p-seq-length-data`.
+- Added train-only `phase4p-seq-length-pedagogy`: 72 rows.
+- Extended `parseTimerActions` so legacy `SEQ` remains valid while new `SEQn`
+  rejects missing or extra ids.
+- Generated
+  `training/generated-actions-lossless-item-atoms-seqlen-phase4p/`.
+  - Train rows: 1762
+  - Validation rows: 207
+  - Hard validation rows: 62
+
+Runs:
+
+| Run | Source | Best selected step | Strict | Semantic | Parseable | Semantic-invalid |
+| --- | --- | ---: | ---: | ---: | ---: | ---: |
+| `phase4p-actions-seqlen-base-lr3e-4` | `google/t5-efficient-tiny` | 2000 | 185/207 | 186/207 | 203/207 | 0/207 |
+| `phase4p-actions-seqlen-cleanup-lr5e-5` | base step 2000 | 50 | 191/207 | 192/207 | 207/207 | 0/207 |
+
+Hard validation:
+
+- Base step 2000: 52/62 strict, 60/62 parseable, 0 semantic-invalid.
+- Cleanup step 50: 55/62 strict, 62/62 parseable, 0 semantic-invalid.
+- Cleanup step 100: 54/62 strict, 61/62 parseable, 0 semantic-invalid.
+
+Selected checkpoint:
+
+```text
+training/seq2seq-runs/phase4p-actions-seqlen-cleanup-lr5e-5/checkpoint-50
+```
+
+Conclusion:
+
+- The basin hypothesis was correct. Training from scratch with the new syntax
+  moved the action candidate from Phase 4N's `169/207` validation and `50/62`
+  hard validation to `191/207` validation and `55/62` hard validation.
+- Step 100 reached `192/207` validation, but it reintroduced parse failures and
+  scored worse on hard validation. Step 50 is the safer candidate.
+- Remaining failures are valid-but-wrong outputs concentrated in role/order
+  selection, especially `count-middle`, hard generic position, and around
+  contrast/regression rows.
+- Next work should either integrate/export this action-language candidate into
+  the browser or run a bigger from-scratch curriculum focused on the remaining
+  role/order failures. Do not continue Phase 4O/4N checkpoints for this syntax.
 
 ### Phase 5: Quantization-Aware Continuation
 

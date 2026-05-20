@@ -163,6 +163,30 @@ assert.deepEqual(
   [],
 );
 
+const hybridSeqLengthRecords = buildTimerSftExamples({
+  targetFormat: "actions",
+  userFormat: "lossless-item-atoms",
+  actionSeqLength: true,
+  includePhase4HardData: true,
+  includeUserRequestExpansion: true,
+});
+const hybridSeqLengthRecord = hybridSeqLengthRecords.find(
+  (record) => record.metadata.userRequest === "30 seconds: Plank, 45 seconds: Squats, 1 minute: Rest",
+);
+assert.ok(hybridSeqLengthRecord);
+assert.equal(hybridSeqLengthRecord.messages[2].content, "SEQ3 I0 I1 I2\nEND");
+assert.deepEqual(
+  compareTimerOutputs(
+    hybridSeqLengthRecord.metadata.expectedTimers,
+    parseTimerActions(hybridSeqLengthRecord.messages[2].content, hybridSeqLengthRecord.metadata.actionSlots).timers,
+  ),
+  [],
+);
+assert.throws(
+  () => parseTimerActions("SEQ3 I0 I1 I2 I2\nEND", hybridSeqLengthRecord.metadata.actionSlots),
+  /SEQ3 has extra item or atom id/,
+);
+
 const hybridGenericRecord = hybridItemAtomRecords.find(
   (record) => record.metadata.userRequest === "8 minute timer, 4 one minute timers, 8 minute timer",
 );
