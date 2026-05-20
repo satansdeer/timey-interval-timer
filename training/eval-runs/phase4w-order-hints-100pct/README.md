@@ -153,6 +153,11 @@ replacing the model's input with a lossy slot extraction.
 
 This result is a strong local milestone, not production proof. The hidden set is
 small, and the browser runtime still expects DSL output from the deployed Phase
-4H model. The next completed unit should implement the browser action-plan
-runtime/export path and then compare Python/HF output against raw browser ONNX
-output by category.
+4H model.
+
+The ONNX/ORT quantization follow-up is recorded in
+`training/eval-runs/phase4x-action-onnx-quantization/README.md`. It found that
+both q8-encoder/q4-decoder and q4-encoder/q4-decoder exports preserve the
+validation, hard, and hidden gates locally. The next completed unit should
+implement the browser action-plan runtime path and then compare CPU ORT output
+against raw browser ONNX Runtime Web output by category.

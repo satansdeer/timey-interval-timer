@@ -115,6 +115,24 @@ Current best experimental action-language candidate:
   planner/export path before this checkpoint can replace the deployed DSL
   model.
 
+Current best experimental action-language ONNX candidate:
+
+- Source checkpoint:
+  `training/seq2seq-runs/phase4w-actions-seqlen-orderhints-generic-cleanup-lr5e-5/checkpoint-500`
+- Temporary local ONNX directory:
+  `/private/tmp/timey-phase4w-actions-onnx/q4enc-q4dec`
+- Quantization:
+  q4 encoder + q4 decoder with decoder exclusions for `/decoder/shared/Gather`
+  and `/lm_head/MatMul`.
+- ONNX sizes:
+  encoder `6,116,635` bytes, decoder `35,285,526` bytes, total `41,402,161`
+  bytes.
+- Local ORT validation:
+  `207/207` validation, `62/62` hard validation, `16/16` hidden validation,
+  `0` semantic-invalid across all gates.
+- Status: not browser-promoted. The final gate must run in browser ONNX
+  Runtime Web after the action-plan runtime path exists.
+
 Current opt-in expanded dataset:
 
 - Dataset output directory:
@@ -2073,10 +2091,56 @@ Conclusion:
   still needs an action-plan browser runtime/export path and browser ONNX eval
   before this checkpoint can replace the deployed Phase 4H DSL model.
 
+### Phase 4X: Action ONNX Quantization
+
+Status: completed local ONNX/ORT probe 2026-05-20; no browser assets promoted.
+
+Artifact:
+
+- `training/eval-runs/phase4x-action-onnx-quantization/README.md`
+
+Goal:
+
+Verify that Phase 4W survives ONNX export and low-bit weight quantization before
+spending browser-runtime work on the action language.
+
+Implementation:
+
+- Extended `scripts/training/seq2seq-timer-benchmark.py` with
+  `--backend ort`.
+- Exported the Phase 4W checkpoint to fp32 ONNX with Optimum.
+- Quantized:
+  - q8 encoder + q4 decoder;
+  - q4 encoder + q4 decoder.
+- Kept q4 decoder exclusions from the previous safe browser export:
+  - `/decoder/shared/Gather`
+  - `/lm_head/MatMul`
+- Saved summary JSONs only; temporary ONNX binaries remain under
+  `/private/tmp/timey-phase4w-actions-onnx/`.
+
+Results:
+
+| Candidate | Encoder bytes | Decoder bytes | Total bytes | Validation | Hard | Hidden |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| fp32 ONNX | 45,554,370 | 49,828,554 | 95,382,924 | 207/207 | not run | not run |
+| q8 encoder + q4 decoder | 11,498,300 | 35,285,526 | 46,783,826 | 207/207 | 62/62 | 16/16 |
+| q4 encoder + q4 decoder | 6,116,635 | 35,285,526 | 41,402,161 | 207/207 | 62/62 | 16/16 |
+
+Conclusion:
+
+- The quantization step did not reduce measured local intelligence on current
+  gates.
+- The q4 encoder no longer causes an observed validation regression in the
+  action-language setup, unlike the earlier DSL browser model.
+- Select q4 encoder + q4 decoder as the current footprint candidate.
+- Do not promote to `models/` until action-plan browser runtime integration and
+  raw browser ONNX Runtime Web category eval pass.
+
 ### Phase 5: Quantization-Aware Continuation
 
-Status: pending, only do this if Phase 2 int4/mixed quantization causes useful
-but fixable category regressions.
+Status: deferred. Phase 4X local ORT quantization did not show a regression on
+the current gates, so QAT is not justified unless browser ONNX Runtime Web
+introduces a quantization-specific regression.
 
 Hypothesis:
 

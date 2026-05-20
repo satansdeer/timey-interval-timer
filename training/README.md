@@ -297,6 +297,13 @@ the browser action-plan extraction/export path, then measure raw browser ONNX
 output by category. A checkpoint remains blocked from production promotion
 unless browser ONNX testing preserves the Python/HF behavior.
 
+The Phase 4X ONNX quantization probe is recorded in
+`training/eval-runs/phase4x-action-onnx-quantization/`. It added an `ort`
+backend to the seq2seq benchmark and found that the Phase 4W action model keeps
+207/207 validation, 62/62 hard validation, and 16/16 hidden validation after q4
+encoder + q4 decoder quantization. That temporary candidate is 41,402,161 ONNX
+bytes, but it is not promoted to browser assets until the action runtime exists.
+
 ## Browser Export
 
 The local browser model is a mixed q8/q4 ONNX export of the current checkpoint:

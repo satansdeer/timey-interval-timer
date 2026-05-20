@@ -27,13 +27,12 @@ def main():
       steps.insert(0, 0)
     max_step = max(steps)
 
-    device = pick_device(args.device)
     tokenizer = AutoTokenizer.from_pretrained(args.model, extra_special_tokens={})
-    model = AutoModelForSeq2SeqLM.from_pretrained(args.model)
-    model.to(device)
+    model, device = load_model(args)
 
     summary = {
         "model": args.model,
+        "backend": args.backend,
         "device": str(device),
         "trainRecords": len(raw_train_records),
         "effectiveTrainRecords": len(train_records),
@@ -60,6 +59,9 @@ def main():
         },
         "steps": [],
     }
+
+    if args.backend == "ort" and max_step > 0:
+        raise ValueError("--backend ort only supports evaluation with --steps 0")
 
     if 0 in steps:
         summary["steps"].append(evaluate_step(model, tokenizer, validation_records, args, 0, output_dir, device))
@@ -101,7 +103,8 @@ def main():
 
 
 def evaluate_step(model, tokenizer, records, args, step, output_dir, device):
-    model.eval()
+    if hasattr(model, "eval"):
+        model.eval()
     predictions = []
     parse_passes = 0
     strict_passes = 0
@@ -379,6 +382,21 @@ def pick_device(value):
     return torch.device("cpu")
 
 
+def load_model(args):
+    if args.backend == "ort":
+        from optimum.onnxruntime import ORTModelForSeq2SeqLM  # noqa: PLC0415
+
+        if args.device != "auto" and args.device != "cpu":
+            raise ValueError("--backend ort currently supports only CPU evaluation")
+        model = ORTModelForSeq2SeqLM.from_pretrained(args.model, use_cache=False)
+        return model, torch.device("cpu")
+
+    device = pick_device(args.device)
+    model = AutoModelForSeq2SeqLM.from_pretrained(args.model)
+    model.to(device)
+    return model, device
+
+
 def rate(count, total):
     if not total:
         return 0.0
@@ -444,6 +462,7 @@ def print_category_summary(summary):
 def parse_args():
     parser = argparse.ArgumentParser(description="Benchmark seq2seq models on Timey timer DSL generation.")
     parser.add_argument("--model", required=True)
+    parser.add_argument("--backend", choices=["hf", "ort"], default="hf")
     parser.add_argument("--train", default="training/generated-dsl-natural/timer-sft-train.jsonl")
     parser.add_argument("--validation", default="training/generated-dsl-natural/timer-sft-validation.jsonl")
     parser.add_argument("--output-dir", required=True)
