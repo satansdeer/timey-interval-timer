@@ -1132,7 +1132,12 @@ function detectAssistantMode() {
 function registerServiceWorker() {
   if (!("serviceWorker" in navigator)) return;
   let refreshing = false;
+  let shouldReloadOnControllerChange = Boolean(navigator.serviceWorker.controller);
   navigator.serviceWorker.addEventListener("controllerchange", () => {
+    if (!shouldReloadOnControllerChange) {
+      shouldReloadOnControllerChange = true;
+      return;
+    }
     if (refreshing) return;
     refreshing = true;
     window.location.reload();
