@@ -5,16 +5,19 @@ import {
   TRANSFORMERS_PACKAGE_VERSION,
   TINY_TIMER_INPUT_PREFIX,
   buildTinyLlmInput,
+  buildTinyLlmRequest,
   getTinyLlmAssetKey,
   parseDirectTimerDslInput,
   repairGenericTimerList,
   validateLlmTimers,
 } from "../llm-planner.js";
 
-assert.equal(
-  buildTinyLlmInput("8 minutes warmup"),
-  `${TINY_TIMER_INPUT_PREFIX}8 minutes warmup`,
-);
+const tinyRequest = buildTinyLlmRequest("8 minutes warmup");
+assert.equal(buildTinyLlmInput("8 minutes warmup"), tinyRequest.input);
+assert.match(tinyRequest.input, new RegExp(`^${TINY_TIMER_INPUT_PREFIX}Request: 8 minutes warmup\\nCounts: none\\n`));
+assert.match(tinyRequest.input, /Atoms: A0@0:9=8m:Timer; A1@0:9,10:16=8m:Warmup/);
+assert.equal(tinyRequest.slots.atoms[1].value, "8m");
+assert.equal(tinyRequest.slots.atoms[1].label, "Warmup");
 
 assert.deepEqual(
   validateLlmTimers([

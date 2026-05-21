@@ -26,6 +26,7 @@ const allRecords = buildTimerSftExamples({
   includePhase4OResidualData: args.phase4OResidualData,
   includePhase4PSeqLengthData: args.phase4PSeqLengthData,
   includePhase4QRoleOrderData: args.phase4QRoleOrderData,
+  includePhase4YBrowserActionExactData: args.phase4YBrowserActionExactData,
   targetFormat: args.targetFormat,
   userFormat: args.userFormat,
   systemPrompt: getSystemPrompt(args),
@@ -61,6 +62,7 @@ await writeFile(
       phase4OResidualData: args.phase4OResidualData,
       phase4PSeqLengthData: args.phase4PSeqLengthData,
       phase4QRoleOrderData: args.phase4QRoleOrderData,
+      phase4YBrowserActionExactData: args.phase4YBrowserActionExactData,
       qwen3NoThink: args.qwen3NoThink,
       validationRatio: args.validationRatio,
       files: {
@@ -106,6 +108,7 @@ function parseArgs(argv) {
     phase4OResidualData: false,
     phase4PSeqLengthData: false,
     phase4QRoleOrderData: false,
+    phase4YBrowserActionExactData: false,
     qwen3NoThink: false,
     targetFormat: DEFAULT_TARGET_FORMAT,
     userFormat: DEFAULT_USER_FORMAT,
@@ -136,6 +139,8 @@ function parseArgs(argv) {
       parsed.phase4PSeqLengthData = true;
     } else if (arg === "--phase4q-role-order-data") {
       parsed.phase4QRoleOrderData = true;
+    } else if (arg === "--phase4y-browser-action-exact-data") {
+      parsed.phase4YBrowserActionExactData = true;
     } else if (arg === "--qwen3-no-think") {
       parsed.qwen3NoThink = true;
     } else if (arg === "--target-format") {
@@ -183,6 +188,8 @@ Options:
   --phase4o-residual-data      Include train-only targeted residual rows after Phase 4N
   --phase4p-seq-length-data    Include train-only pedagogy rows for SEQn action syntax
   --phase4q-role-order-data    Include role/order/count curriculum rows plus hidden stress eval
+  --phase4y-browser-action-exact-data
+                                Include high-frequency exact rows for raw browser action misses
   --qwen3-no-think             Append /no_think to the system prompt for Qwen3 non-thinking mode
   --target-format <json|dsl|actions>
                                 Assistant target format (default: json)

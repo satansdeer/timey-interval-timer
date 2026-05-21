@@ -6,11 +6,15 @@ import {
   isTimerDslPrefix,
   parseTimerDsl,
 } from "./timer-dsl.js";
+import {
+  buildLosslessItemAtomActionUserContent,
+  parseTimerActions,
+} from "./scripts/training/timer-sft-lib.mjs";
 
 export const TRANSFORMERS_PACKAGE_VERSION = "4.2.0";
 export const TRAINED_TINY_MODEL_ID = "timey-t5-efficient-tiny";
-export const TRAINED_TINY_MODEL_VERSION = "t5-efficient-tiny-phase4h-plus-guard-checkpoint-500-q8enc-q4dec-ort-beam8";
-export const TRAINED_TINY_MODEL_DTYPE = "q8-encoder-q4-decoder-opset21";
+export const TRAINED_TINY_MODEL_VERSION = "phase4y-actions-browser-exact-checkpoint-50-dynq8enc-q4dec-ort-beam4";
+export const TRAINED_TINY_MODEL_DTYPE = "dynamic-q8-encoder-q4-decoder-opset21-actions";
 export const TRAINED_TINY_MODEL_DEVICE = "wasm";
 export const TRANSFORMERS_CDN_URL = `https://cdn.jsdelivr.net/npm/@huggingface/transformers@${TRANSFORMERS_PACKAGE_VERSION}`;
 export const ONNXRUNTIME_WEB_VERSION = "1.26.0-dev.20260416-b7804b056c";
@@ -22,10 +26,10 @@ export const ONNXRUNTIME_WASM_PATHS = {
 };
 export const TINY_TIMER_ENCODER_URL = `/models/${TRAINED_TINY_MODEL_ID}/onnx/encoder_model_quantized.onnx`;
 export const TINY_TIMER_DECODER_URL = `/models/${TRAINED_TINY_MODEL_ID}/onnx/decoder_model_quantized.onnx`;
-export const TINY_TIMER_INPUT_PREFIX = "translate timer request to Timey DSL: ";
-export const TINY_TIMER_MAX_INPUT_TOKENS = 160;
+export const TINY_TIMER_INPUT_PREFIX = "translate timer request to Timey actions: ";
+export const TINY_TIMER_MAX_INPUT_TOKENS = 480;
 export const TINY_TIMER_MAX_NEW_TOKENS = 64;
-export const TINY_TIMER_NUM_BEAMS = 8;
+export const TINY_TIMER_NUM_BEAMS = 4;
 export const TINY_TIMER_TOPK_PER_BEAM = 8;
 
 let transformersModulePromise = null;
@@ -79,15 +83,14 @@ export async function planWithTinyLlm({ text, onStatus }) {
   }
 
   const runtime = await getGenerator(onStatus);
-  const input = buildTinyLlmInput(text);
-  const content = await runtime.generate(input, onStatus);
+  const request = buildTinyLlmRequest(text);
+  const content = await runtime.generate(request.input, onStatus);
   if (!content) throw new Error("Tiny timer model returned an empty response");
 
-  const parsed = parseTimerDsl(content, "tiny timer model output");
+  const parsed = parseTimerActions(content, request.slots, "tiny timer model action output");
   const rawTimers = validateLlmTimers(parsed.timers);
-  const timers = repairGenericTimerList(text, rawTimers);
   return {
-    timers: validateLlmTimers(timers),
+    timers: rawTimers,
     model: selectedModelId,
     rawContent: content,
     rawTimers,
@@ -122,7 +125,15 @@ export function repairGenericTimerList(text, modelTimers) {
 }
 
 export function buildTinyLlmInput(text) {
-  return `${TINY_TIMER_INPUT_PREFIX}${String(text || "").trim()}`;
+  return buildTinyLlmRequest(text).input;
+}
+
+export function buildTinyLlmRequest(text) {
+  const actionUserContent = buildLosslessItemAtomActionUserContent(String(text || "").trim());
+  return {
+    input: `${TINY_TIMER_INPUT_PREFIX}${actionUserContent.content}`,
+    slots: actionUserContent.slots,
+  };
 }
 
 export function validateLlmTimers(timers) {
@@ -245,6 +256,7 @@ async function generateWithOrt({ input, tokenizer, ort, encoder, decoder, onStat
     decoder,
     attentionTensor,
     encoderHiddenStates,
+    candidateValidator: null,
     onStatus,
   });
 
@@ -252,7 +264,7 @@ async function generateWithOrt({ input, tokenizer, ort, encoder, decoder, onStat
   return String(tokenizer.decode(outputIds, { skip_special_tokens: true })).trim();
 }
 
-async function generateBeamSearch({ tokenizer, ort, decoder, attentionTensor, encoderHiddenStates, onStatus }) {
+async function generateBeamSearch({ tokenizer, ort, decoder, attentionTensor, encoderHiddenStates, candidateValidator, onStatus }) {
   let beams = [
     {
       ids: [0n],
@@ -297,7 +309,7 @@ async function generateBeamSearch({ tokenizer, ort, decoder, attentionTensor, en
           constraintFallback: beam.constraintFallback,
         };
         const decoded = decodeTimerDslCandidate(tokenizer, outputIds);
-        if (isAllowedTimerDslCandidate(decoded, done, outputIds)) {
+        if (!candidateValidator || candidateValidator(decoded, done, outputIds)) {
           beamCandidates.push(candidate);
         } else if (!isTimerDslHardInvalidPrefix(decoded)) {
           fallbackCandidates.push({ ...candidate, constraintFallback: true });

@@ -1,0 +1,57 @@
+{
+  "model": "/private/tmp/timey-phase4y-actions-onnx/dynq8enc-q4dec",
+  "backend": "ort",
+  "device": "cpu",
+  "trainRecords": 2639,
+  "effectiveTrainRecords": 2639,
+  "validationRecords": 3,
+  "generation": {
+    "inputFormat": "compact",
+    "evalBatchSize": 3,
+    "maxNewTokens": 64,
+    "numBeams": 4,
+    "repetitionPenalty": 1.0,
+    "noRepeatNgramSize": 0,
+    "lengthPenalty": 1.0,
+    "earlyStopping": false
+  },
+  "training": {
+    "trainOrder": "shuffle",
+    "learningRate": 0.0005,
+    "batchSize": 4,
+    "weightDecay": 0.01,
+    "maxGradNorm": 1.0,
+    "categoryWeight": {},
+    "trainCategory": [],
+    "excludeTrainCategory": []
+  },
+  "steps": [
+    {
+      "step": 0,
+      "parseable": 3,
+      "parseableRate": 1.0,
+      "strictExact": 3,
+      "strictExactRate": 1.0,
+      "semanticExact": 3,
+      "semanticExactRate": 1.0,
+      "semanticInvalid": 0,
+      "semanticInvalidRate": 0.0,
+      "categorySummary": [
+        {
+          "category": "browser-real-regression",
+          "count": 3,
+          "parseable": 3,
+          "strictExact": 3,
+          "semanticExact": 3,
+          "semanticInvalid": 0,
+          "parseableRate": 1.0,
+          "strictExactRate": 1.0,
+          "semanticExactRate": 1.0,
+          "semanticInvalidRate": 0.0
+        }
+      ],
+      "seconds": 0.652,
+      "predictions": "training/seq2seq-runs/phase4y-action-onnx-dynq8enc-q4dec-browser-failures-eval/predictions-step-0.jsonl"
+    }
+  ]
+}

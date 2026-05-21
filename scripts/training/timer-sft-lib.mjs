@@ -115,6 +115,7 @@ export function buildTimerSftExamples({
   includePhase4OResidualData = false,
   includePhase4PSeqLengthData = false,
   includePhase4QRoleOrderData = false,
+  includePhase4YBrowserActionExactData = false,
   targetFormat = DEFAULT_TARGET_FORMAT,
   userFormat = DEFAULT_USER_FORMAT,
   systemPrompt = null,
@@ -148,6 +149,7 @@ export function buildTimerSftExamples({
     includePhase4OResidualData,
     includePhase4PSeqLengthData,
     includePhase4QRoleOrderData,
+    includePhase4YBrowserActionExactData,
   })) {
     if (isNaturalRequestUserFormat(userFormat) && spec.correctionRequest) continue;
 
@@ -428,6 +430,32 @@ function formatUserContent(request, actionTarget, { userFormat = "natural" } = {
   }
   const slots = userFormat === "lossless-slots" ? formatLosslessActionSlotsForPrompt(actionTarget.slots) : formatActionSlotsForPrompt(actionTarget.slots);
   return [`Request: ${request}`, `Slots: ${slots}`].join("\n");
+}
+
+export function buildLosslessItemAtomActionUserContent(request) {
+  const source = String(request || "");
+  const slots = extractLosslessActionSlots(source, {
+    includeAtoms: true,
+    includeItems: true,
+    includeOrderHints: true,
+  });
+  return {
+    content: formatLosslessItemAtomActionUserContent(source, slots),
+    slots,
+  };
+}
+
+export function formatLosslessItemAtomActionUserContent(request, slots) {
+  const lines = [
+    `Request: ${request}`,
+    `Counts: ${formatLosslessCountSlotsForPrompt(slots)}`,
+    `Items: ${formatLosslessItemSlotsForPrompt(slots)}`,
+    `ItemCount: ${formatLosslessItemCountForPrompt(slots)}`,
+    `Atoms: ${formatLosslessAtomSlotsForPrompt(slots)}`,
+  ];
+  const orderHints = formatLosslessOrderHintsForPrompt(slots);
+  if (orderHints) lines.push(`Order: ${orderHints}`);
+  return lines.join("\n");
 }
 
 function formatActionSlotsForPrompt(slots) {
@@ -818,7 +846,7 @@ function extractDurationCandidates(source) {
 
   collectRegex(
     source,
-    new RegExp(`\\b(${NUMBER_PHRASE_PATTERN})\\s*${MINUTE_UNIT_PATTERN}[\\s-]*(${NUMBER_PHRASE_PATTERN})\\s*${SECOND_UNIT_PATTERN}\\b`, "gi"),
+    new RegExp(`\\b(${NUMBER_PHRASE_PATTERN})[\\s-]*${MINUTE_UNIT_PATTERN}[\\s-]*(${NUMBER_PHRASE_PATTERN})[\\s-]*${SECOND_UNIT_PATTERN}\\b`, "gi"),
     (match, start, end) => {
       const minutes = parseNumberPhrase(match[1]);
       const seconds = parseNumberPhrase(match[2]);
@@ -828,7 +856,7 @@ function extractDurationCandidates(source) {
 
   collectRegex(
     source,
-    new RegExp(`\\b(${NUMBER_PHRASE_PATTERN})\\s*${MINUTE_UNIT_PATTERN}\\b`, "gi"),
+    new RegExp(`\\b(${NUMBER_PHRASE_PATTERN})[\\s-]*${MINUTE_UNIT_PATTERN}\\b`, "gi"),
     (match, start, end) => {
       const value = parseNumberPhrase(match[1]);
       if (value !== null) add(start, end, value * 60, match[0]);
@@ -837,7 +865,7 @@ function extractDurationCandidates(source) {
 
   collectRegex(
     source,
-    new RegExp(`\\b(${NUMBER_PHRASE_PATTERN})\\s*${SECOND_UNIT_PATTERN}\\b`, "gi"),
+    new RegExp(`\\b(${NUMBER_PHRASE_PATTERN})[\\s-]*${SECOND_UNIT_PATTERN}\\b`, "gi"),
     (match, start, end) => {
       const value = parseNumberPhrase(match[1]);
       if (value !== null) add(start, end, value, match[0]);
@@ -1860,6 +1888,7 @@ function buildSpecs({
   includePhase4OResidualData = false,
   includePhase4PSeqLengthData = false,
   includePhase4QRoleOrderData = false,
+  includePhase4YBrowserActionExactData = false,
 } = {}) {
   const specs = [];
   const add = (category, request, timers, options = {}) => {
@@ -1883,6 +1912,7 @@ function buildSpecs({
   if (includePhase4OResidualData) addPhase4OResidualSpecs(add);
   if (includePhase4PSeqLengthData) addPhase4PSeqLengthSpecs(add);
   if (includePhase4QRoleOrderData) addPhase4QRoleOrderSpecs(add);
+  if (includePhase4YBrowserActionExactData) addPhase4YBrowserActionExactSpecs(add);
 
   return specs;
 }
@@ -3665,6 +3695,47 @@ function addPhase4IBrowserResidualSpecs(add) {
         split: "train",
         duplicateOk: true,
         source: "phase4i-browser-raw-residual",
+        sourceCategory: spec.sourceCategory,
+      });
+    }
+  }
+}
+
+function addPhase4YBrowserActionExactSpecs(add) {
+  const cases = [
+    {
+      request: "5 one minute timers and one 30 second",
+      groups: [
+        [5, 60],
+        [1, 30],
+      ],
+      sourceCategory: "plain-count-plus-singleton",
+    },
+    {
+      request: "Make 1 timer for 90 seconds and 4 timers for 15 seconds",
+      groups: [
+        [1, 90],
+        [4, 15],
+      ],
+      sourceCategory: "plain-count-plus-repeat",
+    },
+    {
+      request: "start and end with 5 minute timers, 5 one-minute timers in the middle",
+      groups: [
+        [1, 300],
+        [5, 60],
+        [1, 300],
+      ],
+      sourceCategory: "hyphenated-middle-duration",
+    },
+  ];
+
+  for (let repeat = 0; repeat < 240; repeat += 1) {
+    for (const spec of cases) {
+      add("phase4y-browser-action-exact", spec.request, genericTimers(spec.groups), {
+        split: "train",
+        duplicateOk: true,
+        source: "phase4y-browser-action-exact",
         sourceCategory: spec.sourceCategory,
       });
     }

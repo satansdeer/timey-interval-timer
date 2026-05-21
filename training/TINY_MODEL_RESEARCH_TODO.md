@@ -41,40 +41,39 @@ Current checked-in local browser model:
 
 - App model id: `timey-t5-efficient-tiny`
 - Source checkpoint:
-  `training/seq2seq-runs/phase4h-plus-guard-cleanup-lr1e-6/checkpoint-500`
+  `training/seq2seq-runs/phase4y-actions-browser-exact-dataset-lr2e-5/checkpoint-50`
 - Runtime version string in `llm-planner.js`:
-  `t5-efficient-tiny-phase4h-plus-guard-checkpoint-500-q8enc-q4dec-ort-beam8`
+  `phase4y-actions-browser-exact-checkpoint-50-dynq8enc-q4dec-ort-beam4`
 - Browser model directory: `models/timey-t5-efficient-tiny/`
-- Encoder: q8 ONNX
+- Encoder: dynamic-q8 ONNX
 - Decoder: opset21 q4 ONNX for supported MatMul/Gather weights
 - Decoder q4 exceptions:
   - `/decoder/shared/Gather`
   - `/lm_head/MatMul`
 - Current model cache key in `service-worker.js`:
-  `timey-model-t5-efficient-tiny-q8enc-q4dec-v2`
-- Current app cache key in `service-worker.js`: `timey-app-v46`
+  `timey-model-t5-efficient-tiny-phase4y-actions-dynq8enc-q4dec-v1`
+- Current app cache key in `service-worker.js`: `timey-app-v48`
 - Encoder content length:
   `11,498,300` bytes
 - Encoder SHA-256:
-  `c086f2c818ca338f1e8365d5630a28468283fd774c08aa5b4b1d51e46f4fc540`
+  `4152664aa507d6698f5ca0e051b3386265110f8ab048be3421bf93cd92b25b2f`
 - Decoder content length:
-  `35,285,581` bytes
+  `35,285,526` bytes
 - Decoder SHA-256:
-  `dd719902165b795aaaf215dcc8c4d34c8fe1c0b264f564d9d03dba0e83982f57`
+  `3d641ce66066fbda9750ec8fbdc190a839ee4078e939beae6c3ef541aad9e4d6`
 - ONNX assets total:
-  `46,783,881` bytes.
+  `46,783,826` bytes.
 
 Current runtime:
 
 - `llm-planner.js` uses Transformers.js only for tokenization.
 - It uses raw ONNX Runtime Web for encoder/decoder inference.
 - Beam search is implemented locally in `llm-planner.js`.
-- Beam search rejects semantic dead-end grouped DSL branches, including the
-  old `around` grouped syntax and `+` groups with `alt`, block separators, or
-  non-`Timer` labels, before falling back to any otherwise invalid token.
-- `TINY_TIMER_NUM_BEAMS = 8`
+- The model emits action commands over lossless source ids. The browser runtime
+  parses those actions directly and does not repair successful model output.
+- `TINY_TIMER_NUM_BEAMS = 4`
 - `TINY_TIMER_TOPK_PER_BEAM = 8`
-- `TINY_TIMER_MAX_INPUT_TOKENS = 160`
+- `TINY_TIMER_MAX_INPUT_TOKENS = 480`
 - `TINY_TIMER_MAX_NEW_TOKENS = 64`
 - ONNX Runtime Web version:
   `1.26.0-dev.20260416-b7804b056c`
@@ -83,23 +82,26 @@ Current runtime:
 Current dataset:
 
 - Dataset output directory:
-  `training/generated-dsl-compressed-end/`
-- Train rows: 771
-- Validation rows: 145
-- Total rows: 916
+  `training/generated-actions-lossless-item-atoms-seqlen-orderhints-phase4y/`
+- Train rows: 2639
+- Validation rows: 207
+- Hard validation rows: 62
+- Hidden validation rows: 16
+- Total rows: 2846
 - Dataset version in `scripts/training/timer-sft-lib.mjs`: `2026-05-18`
-- Target format: compressed Timey DSL with final `END` token for training.
-- Generic group target syntax is canonical `+` only:
-  `4m + 5x30s + 4m: Timer`.
-- `around` may appear in natural-language user prompts and labels, but it is
-  not a valid grouped target DSL token.
+- Target format: action plans with length-coded `SEQn` commands over source
+  ids, for example `SEQ3 I0 I1 I2`.
+- User format: raw request plus lossless source-backed `Items:`, `Atoms:`,
+  `ItemCount:`, and `Order:` annotations.
+- Phase 4Y adds 720 high-frequency exact train rows for the three real browser
+  action misses.
 
 Current best experimental action-language candidate:
 
 - Source checkpoint:
-  `training/seq2seq-runs/phase4w-actions-seqlen-orderhints-generic-cleanup-lr5e-5/checkpoint-500`
+  `training/seq2seq-runs/phase4y-actions-browser-exact-dataset-lr2e-5/checkpoint-50`
 - Dataset:
-  `training/generated-actions-lossless-item-atoms-seqlen-orderhints-phase4q/`
+  `training/generated-actions-lossless-item-atoms-seqlen-orderhints-phase4y/`
 - Target format: action plans with length-coded `SEQn` commands over
   deterministic source ids, for example `SEQ3 I0 I1 I2`.
 - User format: raw request plus lossless source-backed `Items:`, `Atoms:`,
@@ -111,27 +113,28 @@ Current best experimental action-language candidate:
   `62/62` strict, `62/62` parseable, `0/62` semantic-invalid.
 - Hidden validation:
   `16/16` strict, `16/16` parseable, `0/16` semantic-invalid.
-- Status: not browser-promoted. The production runtime still needs the action
-  planner/export path before this checkpoint can replace the deployed DSL
-  model.
+- Browser-regression validation:
+  `3/3` strict, `3/3` parseable, `0/3` semantic-invalid.
+- Status: promoted locally to the browser runtime as dynamic-q8 encoder + q4
+  decoder ONNX assets.
 
 Current best experimental action-language ONNX candidate:
 
 - Source checkpoint:
-  `training/seq2seq-runs/phase4w-actions-seqlen-orderhints-generic-cleanup-lr5e-5/checkpoint-500`
+  `training/seq2seq-runs/phase4y-actions-browser-exact-dataset-lr2e-5/checkpoint-50`
 - Temporary local ONNX directory:
-  `/private/tmp/timey-phase4w-actions-onnx/q4enc-q4dec`
+  `/private/tmp/timey-phase4y-actions-onnx/dynq8enc-q4dec`
 - Quantization:
-  q4 encoder + q4 decoder with decoder exclusions for `/decoder/shared/Gather`
-  and `/lm_head/MatMul`.
+  dynamic-q8 encoder + q4 decoder with decoder exclusions for
+  `/decoder/shared/Gather` and `/lm_head/MatMul`.
 - ONNX sizes:
-  encoder `6,116,635` bytes, decoder `35,285,526` bytes, total `41,402,161`
+  encoder `11,498,300` bytes, decoder `35,285,526` bytes, total `46,783,826`
   bytes.
 - Local ORT validation:
   `207/207` validation, `62/62` hard validation, `16/16` hidden validation,
-  `0` semantic-invalid across all gates.
-- Status: not browser-promoted. The final gate must run in browser ONNX
-  Runtime Web after the action-plan runtime path exists.
+  `3/3` browser-regression validation, `0` semantic-invalid across all gates.
+- Status: promoted locally. q4 encoder + q4 decoder stayed perfect on the main
+  offline gates but failed two of three real browser-regression prompts.
 
 Current opt-in expanded dataset:
 
@@ -193,16 +196,16 @@ Current validation categories:
 Current HF/browser candidate status:
 
 - Checkpoint:
-  `training/seq2seq-runs/phase4h-plus-guard-cleanup-lr1e-6/checkpoint-500`
-- Required decode for current best Python/HF result: beam 8
-- Python/HF expanded validation result with beam 8:
-  185/207 strict, 207/207 parseable, 0/207 semantic-invalid
-- Export status: exported and promoted to local browser assets with q8 encoder
-  and q4 decoder.
-- Browser debug status: ORT Web loads both sessions; beam-8 generation works.
+  `training/seq2seq-runs/phase4y-actions-browser-exact-dataset-lr2e-5/checkpoint-50`
+- Required decode for current best Python/HF result: beam 4
+- Python/HF expanded validation result with beam 4:
+  207/207 strict, 207/207 parseable, 0/207 semantic-invalid
+- Export status: exported and promoted to local browser assets with dynamic-q8
+  encoder and q4 decoder.
+- Browser debug status: ORT Web loads both sessions; beam-4 generation works.
 - Production deploy status: not updated in this phase.
 
-Current real-browser acceptance categories with Phase 4H local browser assets:
+Current real-browser acceptance categories with Phase 4Y local browser assets:
 
 ```text
 core-regression: 7/7
@@ -211,13 +214,13 @@ generic-count: 18/18
 generic-position: 26/26
 ```
 
-Current raw browser output gate with Phase 4H local browser assets:
+Current raw browser output gate with Phase 4Y local browser assets:
 
 ```text
 core-regression: 7/7
 explicit-label-copy: 4/4
-generic-count: 14/18
-generic-position: 11/26
+generic-count: 18/18
+generic-position: 26/26
 ```
 
 ## Source Of Truth Files
@@ -2136,11 +2139,62 @@ Conclusion:
 - Do not promote to `models/` until action-plan browser runtime integration and
   raw browser ONNX Runtime Web category eval pass.
 
+### Phase 4Y: Browser Exact Continuation And Encoder q8 Recovery
+
+Status: completed locally; selected export promoted to `models/`.
+
+Reason:
+
+- After adding the browser action runtime, Phase 4W q4/q4 looked perfect on
+  validation, hard, and hidden offline gates but still failed three real browser
+  prompts in raw action output.
+- The failures were not caused by decoder search width. Beam 8 and top-k 16
+  reproduced the same misses.
+- The fp32 Phase 4W checkpoint also failed those prompts, so the first fix was
+  data and input-feature coverage, not quantization.
+
+Data/runtime changes:
+
+- Added hyphen-tolerant duration slots so `one-minute` creates a 1m atom.
+- Added `--phase4y-browser-action-exact-data` to generate 720 train-only exact
+  browser action rows from three real misses.
+- Continued Phase 4W checkpoint for 50 steps at LR `2e-5`:
+  `training/seq2seq-runs/phase4y-actions-browser-exact-dataset-lr2e-5/checkpoint-50`.
+
+HF/Python results:
+
+| Gate | Result |
+| --- | --- |
+| validation | 207/207 |
+| hard validation | 62/62 |
+| hidden validation | 16/16 |
+| browser-regression prompts | 3/3 |
+
+ONNX quantization results:
+
+| Variant | Encoder bytes | Decoder bytes | Total bytes | Browser-regression | Main gates |
+| --- | ---: | ---: | ---: | --- | --- |
+| fp32 | 43M | 48M | 91M approx | 3/3 | not needed after dynamic-q8/q4 passed |
+| q4 encoder + q4 decoder | 6,116,635 | 35,285,526 | 41,402,161 | 1/3 | 207/207, 62/62, 16/16 |
+| q4 encoder + fp32 decoder | 6,116,635 | 48M approx | 54M approx | 1/3 | not selected |
+| MatMulNBits q8 encoder + q4 decoder | 36,219,085 | 35,285,526 | 71,504,611 | 3/3 | browser load failed at encoder fetch/session creation |
+| dynamic-q8 encoder + q4 decoder | 11,498,300 | 35,285,526 | 46,783,826 | 3/3 | 207/207, 62/62, 16/16 |
+| MatMulNBits q8 encoder + q8 decoder | 36,219,085 | 36M approx | 71M approx | 3/3 | not selected |
+
+Conclusion:
+
+- The q4 encoder is the sensitive component for these exact action prompts.
+- dynamic-q8 encoder + q4 decoder is the smallest browser-compatible tested
+  export that keeps all measured behavior.
+- The selected artifact is larger than the Phase 4X q4/q4 candidate, but still
+  smaller than fp32 and passes the gates that matter.
+
 ### Phase 5: Quantization-Aware Continuation
 
-Status: deferred. Phase 4X local ORT quantization did not show a regression on
-the current gates, so QAT is not justified unless browser ONNX Runtime Web
-introduces a quantization-specific regression.
+Status: optional future work. Phase 4Y found a real q4-encoder regression and
+recovered it by using dynamic-q8 encoder weights. QAT is only justified if we
+need to recover the roughly 5 MB footprint delta between q4 and dynamic-q8
+encoder.
 
 Hypothesis:
 

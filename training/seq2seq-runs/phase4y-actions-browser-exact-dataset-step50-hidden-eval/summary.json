@@ -1,0 +1,81 @@
+{
+  "model": "training/seq2seq-runs/phase4y-actions-browser-exact-dataset-lr2e-5/checkpoint-50",
+  "backend": "hf",
+  "device": "mps",
+  "trainRecords": 2639,
+  "effectiveTrainRecords": 2639,
+  "validationRecords": 16,
+  "generation": {
+    "inputFormat": "compact",
+    "evalBatchSize": 8,
+    "maxNewTokens": 64,
+    "numBeams": 4,
+    "repetitionPenalty": 1.0,
+    "noRepeatNgramSize": 0,
+    "lengthPenalty": 1.0,
+    "earlyStopping": false
+  },
+  "training": {
+    "trainOrder": "shuffle",
+    "learningRate": 0.0005,
+    "batchSize": 4,
+    "weightDecay": 0.01,
+    "maxGradNorm": 1.0,
+    "categoryWeight": {},
+    "trainCategory": [],
+    "excludeTrainCategory": []
+  },
+  "steps": [
+    {
+      "step": 0,
+      "parseable": 16,
+      "parseableRate": 1.0,
+      "strictExact": 16,
+      "strictExactRate": 1.0,
+      "semanticExact": 16,
+      "semanticExactRate": 1.0,
+      "semanticInvalid": 0,
+      "semanticInvalidRate": 0.0,
+      "categorySummary": [
+        {
+          "category": "phase4q-hidden-alt-order",
+          "count": 6,
+          "parseable": 6,
+          "strictExact": 6,
+          "semanticExact": 6,
+          "semanticInvalid": 0,
+          "parseableRate": 1.0,
+          "strictExactRate": 1.0,
+          "semanticExactRate": 1.0,
+          "semanticInvalidRate": 0.0
+        },
+        {
+          "category": "phase4q-hidden-block-order",
+          "count": 4,
+          "parseable": 4,
+          "strictExact": 4,
+          "semanticExact": 4,
+          "semanticInvalid": 0,
+          "parseableRate": 1.0,
+          "strictExactRate": 1.0,
+          "semanticExactRate": 1.0,
+          "semanticInvalidRate": 0.0
+        },
+        {
+          "category": "phase4q-hidden-generic-count",
+          "count": 6,
+          "parseable": 6,
+          "strictExact": 6,
+          "semanticExact": 6,
+          "semanticInvalid": 0,
+          "parseableRate": 1.0,
+          "strictExactRate": 1.0,
+          "semanticExactRate": 1.0,
+          "semanticInvalidRate": 0.0
+        }
+      ],
+      "seconds": 1.983,
+      "predictions": "training/seq2seq-runs/phase4y-actions-browser-exact-dataset-step50-hidden-eval/predictions-step-0.jsonl"
+    }
+  ]
+}

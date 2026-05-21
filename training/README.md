@@ -302,19 +302,32 @@ The Phase 4X ONNX quantization probe is recorded in
 backend to the seq2seq benchmark and found that the Phase 4W action model keeps
 207/207 validation, 62/62 hard validation, and 16/16 hidden validation after q4
 encoder + q4 decoder quantization. That temporary candidate is 41,402,161 ONNX
-bytes, but it is not promoted to browser assets until the action runtime exists.
+bytes, but raw browser-action prompts exposed three uncovered request shapes.
+
+The Phase 4Y browser-exact continuation is recorded in
+`training/eval-runs/phase4y-browser-exact-quantization/`. It adds exact
+high-frequency train rows for the three browser misses and extends the lossless
+duration extractor to catch hyphenated duration phrases such as `one-minute`.
+The selected checkpoint is
+`training/seq2seq-runs/phase4y-actions-browser-exact-dataset-lr2e-5/checkpoint-50`.
+The fp32 checkpoint keeps 207/207 validation, 62/62 hard validation, 16/16 hidden
+validation, and 3/3 browser-regression prompts. ONNX q4 encoder + q4 decoder
+still fails two browser-regression prompts, so the promoted browser export uses
+dynamic-q8 encoder + q4 decoder. That variant keeps all four gates exactly and
+loads in ONNX Runtime Web.
 
 ## Browser Export
 
-The local browser model is a mixed q8/q4 ONNX export of the current checkpoint:
+The local browser model is a mixed dynamic-q8/q4 ONNX export of the current
+checkpoint:
 
 ```text
 models/timey-t5-efficient-tiny/
 ```
 
 It contains tokenizer/config files at the model root and the two ONNX files used
-by the browser runtime. The encoder is q8. The decoder is q4 for supported
-MatMul/Gather weights except for `/decoder/shared/Gather` and
+by the browser runtime. The encoder is dynamic-q8. The decoder is q4 for
+supported MatMul/Gather weights except for `/decoder/shared/Gather` and
 `/lm_head/MatMul`, which stay fp32 because those weights are sensitive.
 
 - `onnx/encoder_model_quantized.onnx`
@@ -323,4 +336,11 @@ MatMul/Gather weights except for `/decoder/shared/Gather` and
 The app uses Transformers.js for tokenization and raw ONNX Runtime Web for
 greedy/beam decoder inference. It intentionally does not use the Transformers.js
 `text2text-generation` pipeline because that path hung during browser preload
-with this exported T5 checkpoint.
+testing. The Phase 4Y promoted asset passes the raw real-browser gate:
+
+```text
+core-regression: 7/7
+explicit-label-copy: 4/4
+generic-count: 18/18
+generic-position: 26/26
+```

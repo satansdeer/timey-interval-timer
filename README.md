@@ -89,9 +89,10 @@ Deploy with the authenticated Netlify CLI from a clean static bundle:
 
 ```sh
 rm -rf /tmp/timey-netlify
-mkdir -p /tmp/timey-netlify
+mkdir -p /tmp/timey-netlify/scripts/training
 cp index.html styles.css main.js assistant-session.js fallback-planner.js planner.js llm-planner.js service-worker.js manifest.webmanifest favicon.svg /tmp/timey-netlify/
 cp timer-dsl.js /tmp/timey-netlify/
+cp scripts/training/timer-sft-lib.mjs /tmp/timey-netlify/scripts/training/
 cp -R models /tmp/timey-netlify/
 netlify deploy --prod --dir /tmp/timey-netlify --message "Deploy Timey"
 ```
@@ -118,28 +119,26 @@ The assistant uses a planner stack:
 
 - `assistant-session.js` is the shared DOM-free session layer used by both the web UI and console harness.
 - `timer-dsl.js` defines the timer shorthand grammar used by both human input and model output.
+- `scripts/training/timer-sft-lib.mjs` defines the shared action-slot prompt builder and action parser used by both training/eval and the browser runtime.
 - `llm-planner.js` loads the trained `timey-t5-efficient-tiny` seq2seq model from local `/models` assets. It uses Transformers.js for tokenization and raw ONNX Runtime Web for encoder/decoder inference.
 - `planner.js` chooses the tiny model path when the model is loaded, otherwise the deterministic backup.
-- `fallback-planner.js` is the deterministic backup for unsupported browsers, failed model loads, and correction requests. Successful model output is parsed as Timey DSL and validated before changing UI state.
+- `fallback-planner.js` is the deterministic backup for unsupported browsers, failed model loads, and correction requests. Successful model output is parsed as Timey action commands and validated before changing UI state.
 
 On page load, the app checks WebAssembly support. Supported browsers
 automatically load and use the local tiny model. Unsupported browsers use the
 fallback parser without prompting.
 
 The tiny model path pins `@huggingface/transformers@4.2.0`,
-`onnxruntime-web@1.26.0-dev.20260416-b7804b056c`, and a mixed q8/q4 ONNX export
-of `t5-efficient-tiny-phase4h-plus-guard-checkpoint-500`. The encoder is q8,
-and the decoder uses opset21 weight-only q4 for supported MatMul/Gather weights
-while keeping sensitive shared embedding/lm-head paths uncompressed.
-The model emits compact Timey DSL, for example `4x 1m: Rest | 1m: Work`, and
-the shared parser expands that into timer objects.
-For simple generic timer lists, the planner can repair a model output when the
-deterministic list parser proves the requested timers exactly.
+`onnxruntime-web@1.26.0-dev.20260416-b7804b056c`, and the Phase 4Y action
+checkpoint exported as dynamic-q8 encoder plus q4 decoder ONNX. The model input keeps
+the raw request and shared lossless slot annotations, and the model emits Timey
+action commands such as `ADD A0`, `ALT C0 A4 A5`, or `SEQ3 I0 I1 I2`. The shared
+action parser expands those commands into timer objects.
 
 ## Update Caching
 
 The service worker owns `timey-app-*` caches for app files and a separate
-`timey-model-t5-efficient-tiny-q8enc-q4dec-v2` cache for same-origin `/models/` assets.
+`timey-model-t5-efficient-tiny-phase4y-actions-dynq8enc-q4dec-v1` cache for same-origin `/models/` assets.
 App files use network-first responses; model files use cache-first responses so
 ordinary UI deploys do not force a fresh model download.
 
@@ -149,5 +148,5 @@ model cache first, then verifies the old UI cache is removed, the new UI cache
 is installed, and the model cache entry is still available without a network
 download.
 
-The model should return only parseable Timey DSL. UI state is changed only
-after DSL parsing, schema validation, and timer normalization.
+The model should return only parseable Timey action commands. UI state is
+changed only after action parsing, schema validation, and timer normalization.
