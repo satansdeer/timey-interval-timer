@@ -2223,29 +2223,59 @@ Risks:
 - Tooling for encoder-decoder T5 plus ONNX export may be brittle.
 - Training can fix Python/HF behavior but still fail after ONNX quantization.
 
-### Phase 6: Deployment
+### Phase 6: Deployment And Public Release
 
-Status: pending for any future promoted model/runtime change.
+Status: completed for Timmy T2 v0.1.0.
 
-Before deploy:
+Production release:
 
-- [ ] `npm test`
-- [ ] `npm run training:validate`
-- [ ] `npm run test:llm:real`
-- [ ] `npm run test:browser`
-- [ ] Verify model file sizes.
-- [ ] Verify service worker cache keys:
-  - Bump app cache for JS/CSS/HTML changes.
-  - Bump model cache if `/models/` files change.
-- [ ] Update `TRAINED_TINY_MODEL_VERSION` if model/runtime behavior changes.
-- [ ] Update `TRAINED_TINY_MODEL_DTYPE` if quantization changes.
-- [ ] Update `training/README.md` current results.
-- [ ] Create deploy bundle and deploy with Netlify CLI.
-- [ ] Smoke-check production:
+- App: <https://timey-interval-timer.netlify.app>
+- Netlify deploy id: `6a0ed36e0172c100ef1ab8ac`
+- Production model-promotion commit: `213323b`
+- Source tag: `timmy-t2-v0.1.0`
+- Model repo: <https://huggingface.co/Satansdeer/timmy-t2>
+- Dataset repo:
+  <https://huggingface.co/datasets/Satansdeer/timmy-t2-timer-sft>
+- Training archive: `training/release-archive/timmy-t2-v0.1.0/`
+
+Completed deploy checklist:
+
+- [x] `npm test`
+- [x] `npm run training:validate`
+- [x] `TIMEY_REAL_TINY_MODEL=1 TIMEY_REAL_TINY_MODEL_RAW_STRICT=1 TIMEY_REAL_TINY_MODEL_TIMEOUT_MS=900000 npm run test:llm:real`
+- [x] Verify model file sizes:
+  - encoder: `11,498,300` bytes
+  - decoder: `35,285,526` bytes
+  - total ONNX payload: `46,783,826` bytes
+- [x] Verify service worker cache keys:
+  - app cache: `timey-app-v49`
+  - model cache:
+    `timey-model-t5-efficient-tiny-phase4y-actions-dynq8enc-q4dec-v1`
+- [x] Update `TRAINED_TINY_MODEL_VERSION`:
+  `phase4y-actions-browser-exact-checkpoint-50-dynq8enc-q4dec-ort-beam4`
+- [x] Update `TRAINED_TINY_MODEL_DTYPE`:
+  `dynamic-q8-encoder-q4-decoder-opset21-actions`
+- [x] Update `training/README.md` current results.
+- [x] Create deploy bundle and deploy with Netlify CLI.
+- [x] Smoke-check production:
   - `service-worker.js` cache key.
   - `llm-planner.js` model version string.
   - model asset content lengths.
-  - a prompt in browser if practical.
+  - direct browser generation with service workers enabled.
+  - UI assistant submit path with source `tiny-llm`.
+
+Publication checklist:
+
+- [x] Stage model and dataset artifacts with
+  `scripts/release/stage-huggingface.mjs`.
+- [x] Upload model repo `Satansdeer/timmy-t2`.
+- [x] Upload dataset repo `Satansdeer/timmy-t2-timer-sft`.
+- [x] Keep hidden validation rows out of the public dataset while publishing
+  aggregate hidden metrics.
+- [x] Post-upload verify HF metadata and file inventory.
+
+Future model/runtime deploys should repeat the same checklist and create a new
+release archive entry.
 
 ## Current Known Failure Modes And Fix Ownership
 

@@ -2,8 +2,23 @@
 
 This directory contains the local training harness for the tiny timer planner.
 The current production target is a small seq2seq model that translates natural
-language timer requests into the same compact Timey DSL that humans can type in
-the app.
+language timer requests into Timey action commands over lossless extracted
+slots. Human-authored shorthand DSL is still supported directly by the app; the
+model path now uses the denser action language because it is easier for the
+tiny model to emit correctly.
+
+## Current Release
+
+Timmy T2 v0.1.0 is the public release of the browser model:
+
+- Model: <https://huggingface.co/Satansdeer/timmy-t2>
+- Dataset: <https://huggingface.co/datasets/Satansdeer/timmy-t2-timer-sft>
+- Training archive: `training/release-archive/timmy-t2-v0.1.0/`
+- Runtime model version:
+  `phase4y-actions-browser-exact-checkpoint-50-dynq8enc-q4dec-ort-beam4`
+- Browser export: dynamic-q8 encoder plus q4 decoder ONNX.
+- Selected gate results: 207/207 validation, 62/62 hard validation, 16/16
+  hidden validation, and 3/3 browser-regression prompts.
 
 ## Dataset
 
@@ -21,9 +36,20 @@ Generated files:
 - `training/generated-dsl-compressed-end/timer-sft-all.jsonl`
 - `training/generated-dsl-compressed-end/timer-sft-manifest.json`
 
-The current split is 771 train rows and 145 validation rows. It includes
-count-stress categories for exact N middle intervals, exact work/rest pairs,
-plain repeated timers, alternating timers, and label copying.
+The legacy compressed DSL split is 771 train rows and 145 validation rows. It
+is kept for regression and historical comparison.
+
+The current Timmy T2 release dataset is:
+
+- `training/generated-actions-lossless-item-atoms-seqlen-orderhints-phase4y/timer-sft-train.jsonl`
+- `training/generated-actions-lossless-item-atoms-seqlen-orderhints-phase4y/timer-sft-validation.jsonl`
+- `training/generated-actions-lossless-item-atoms-seqlen-orderhints-phase4y/timer-sft-hard-validation.jsonl`
+- `training/generated-actions-lossless-item-atoms-seqlen-orderhints-phase4y/timer-sft-hidden-validation.jsonl`
+- `training/generated-actions-lossless-item-atoms-seqlen-orderhints-phase4y/timer-sft-manifest.json`
+
+The public Hugging Face dataset includes train, validation, hard validation,
+and all-public rows. The hidden validation rows stay private; only aggregate
+metrics are published.
 
 There is also an opt-in expanded user-request dataset for focused experiments:
 
@@ -232,24 +258,21 @@ not improve the raw browser gate, so Phase 4I was not promoted.
 
 The action-language experiments move concrete values into lossless annotations
 and ask the tiny model to emit parser-backed action plans instead of direct DSL.
-The strongest current candidate is recorded in
-`training/eval-runs/phase4w-order-hints-100pct/`. It uses source-ordered
-`Items:` plus `Atoms:` annotations, `ItemCount:`, compact `Order:` hints, and
-length-coded `SEQn` commands such as `SEQ3 I0 I1 I2`. Continuing the Phase 4V
-order-hint checkpoint with a narrow generic cleanup reached `207/207` strict,
-`207/207` semantic, `207/207` parseable validation, `62/62` hard validation,
-and `16/16` hidden validation. It is not browser-promoted yet because the
-deployed runtime still needs the action-plan extraction/export path.
+The completed action-language lineage is recorded in
+`training/eval-runs/phase4w-order-hints-100pct/`,
+`training/eval-runs/phase4x-action-onnx-quantization/`, and
+`training/eval-runs/phase4y-browser-exact-quantization/`. The selected
+production export is Phase 4Y dynamic-q8 encoder plus q4 decoder ONNX.
 
 ## Results
 
 The current local browser checkpoint is:
 
 ```text
-training/seq2seq-runs/phase4h-plus-guard-cleanup-lr1e-6/checkpoint-500
+training/seq2seq-runs/phase4y-actions-browser-exact-dataset-lr2e-5/checkpoint-50
 ```
 
-Current local scores:
+Current release scores:
 
 | Model/run | Decode | Strict exact | Parseable | Semantic-invalid |
 | --- | --- | ---: | ---: | ---: |
@@ -258,44 +281,28 @@ Current local scores:
 | Phase 4I browser-residual best HF step | beam 8 | 187/207 | 207/207 | 0/207 |
 | Phase 4P action `SEQn` checkpoint | beam 4 | 191/207 | 207/207 | 0/207 |
 | Phase 4W action order-hint checkpoint | beam 4 | 207/207 | 207/207 | 0/207 |
+| Phase 4Y fp32 browser-exact continuation | beam 4 | 207/207 | 207/207 | 0/207 |
+| Phase 4Y dynamic-q8 encoder + q4 decoder ONNX | beam 4 | 207/207 | 207/207 | 0/207 |
 
-The compressed repeat syntax removed the long-output counting failures that made
-the tiny model unreliable. The label-copy continuation fixed the remaining
-explicit sequence misses without regressing count, pair, generic timer, or
-original validation rows. The positional-generic continuation fixes the observed
-prompt `first and last timers 5 minute, 5 one minute in between` without
-regressing non-positional validation. The remaining raw-model misses are generic
-list variants covered by the shared deterministic generic-list repair in the
-browser path.
+Additional selected ONNX gates:
 
-The current dataset adds compact generic group targets for those remaining raw
-model misses. All generic group targets use `+`, including symmetric bookends.
-This is intended to reduce endpoint-copy and middle-run duplication errors
-without teaching a second grouped token that the model can overgeneralize.
+| Gate | Result |
+| --- | ---: |
+| hard validation | 62/62 |
+| hidden validation | 16/16 |
+| browser-regression prompts | 3/3 |
 
-The current expanded experimental dataset adds Phase 4H train-only residual
-rows. These rows improved the best tiny candidate from 175/207 to 185/207
-under beam 8, but did not make the model perfect. The remaining misses are
-valid-but-wrong outputs around word durations, generic endpoint copying, and
-some work/rest order or duration details.
+The older direct-DSL line of work removed long-output counting failures and
+improved label copying, but it plateaued below the current action-language
+results. The lesson from those phases is preserved in `training/eval-runs/` and
+`training/TINY_MODEL_RESEARCH_TODO.md`: syntax design, semantic-invalid checks,
+and hidden validation mattered more than simply continuing one checkpoint.
 
-The Phase 4I browser-residual rows did not transfer into better raw ONNX browser
-behavior. Repaired production output still passes the real-browser categories,
-but raw browser output remains the limiting metric for model-first promotion.
-
-The user-request expansion was measured in
-`training/eval-runs/phase6-user-request-expansion/`. It improved the new
-`user-around-contrast` category, but did not fix `user-generic-surface` or
-`generic-position`, so no checkpoint from that phase was promoted. The broad
-plain-timer `user-generic-surface` cases are now covered by deterministic
-generic-sequence repair in the browser path.
-
-The Phase 4W action-language run is the first local tiny checkpoint to hit the
-current fixed validation and hard validation sets exactly. The remaining
-promotion work is runtime work, not another immediate training sweep: implement
-the browser action-plan extraction/export path, then measure raw browser ONNX
-output by category. A checkpoint remains blocked from production promotion
-unless browser ONNX testing preserves the Python/HF behavior.
+The action-language line moved concrete values into lossless annotations and
+asked the tiny model to emit dense commands over slot ids. Phase 4W was the
+first checkpoint to hit the fixed validation, hard validation, and hidden gates
+exactly. Phase 4Y added browser-exact rows for the remaining raw browser misses
+and produced the model now deployed in production.
 
 The Phase 4X ONNX quantization probe is recorded in
 `training/eval-runs/phase4x-action-onnx-quantization/`. It added an `ort`

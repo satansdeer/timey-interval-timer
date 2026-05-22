@@ -1,0 +1,129 @@
+{
+  "model": "training/seq2seq-runs/phase4y-actions-browser-exact-dataset-lr2e-5/checkpoint-50",
+  "backend": "hf",
+  "device": "mps",
+  "trainRecords": 2639,
+  "effectiveTrainRecords": 2639,
+  "validationRecords": 62,
+  "generation": {
+    "inputFormat": "compact",
+    "evalBatchSize": 8,
+    "maxNewTokens": 64,
+    "numBeams": 4,
+    "repetitionPenalty": 1.0,
+    "noRepeatNgramSize": 0,
+    "lengthPenalty": 1.0,
+    "earlyStopping": false
+  },
+  "training": {
+    "trainOrder": "shuffle",
+    "learningRate": 0.0005,
+    "batchSize": 4,
+    "weightDecay": 0.01,
+    "maxGradNorm": 1.0,
+    "categoryWeight": {},
+    "trainCategory": [],
+    "excludeTrainCategory": []
+  },
+  "steps": [
+    {
+      "step": 0,
+      "parseable": 62,
+      "parseableRate": 1.0,
+      "strictExact": 62,
+      "strictExactRate": 1.0,
+      "semanticExact": 62,
+      "semanticExactRate": 1.0,
+      "semanticInvalid": 0,
+      "semanticInvalidRate": 0.0,
+      "categorySummary": [
+        {
+          "category": "generic-position-hard",
+          "count": 10,
+          "parseable": 10,
+          "strictExact": 10,
+          "semanticExact": 10,
+          "semanticInvalid": 0,
+          "parseableRate": 1.0,
+          "strictExactRate": 1.0,
+          "semanticExactRate": 1.0,
+          "semanticInvalidRate": 0.0
+        },
+        {
+          "category": "generic-timers-hard",
+          "count": 6,
+          "parseable": 6,
+          "strictExact": 6,
+          "semanticExact": 6,
+          "semanticInvalid": 0,
+          "parseableRate": 1.0,
+          "strictExactRate": 1.0,
+          "semanticExactRate": 1.0,
+          "semanticInvalidRate": 0.0
+        },
+        {
+          "category": "user-around-contrast",
+          "count": 20,
+          "parseable": 20,
+          "strictExact": 20,
+          "semanticExact": 20,
+          "semanticInvalid": 0,
+          "parseableRate": 1.0,
+          "strictExactRate": 1.0,
+          "semanticExactRate": 1.0,
+          "semanticInvalidRate": 0.0
+        },
+        {
+          "category": "user-around-regression-guard",
+          "count": 13,
+          "parseable": 13,
+          "strictExact": 13,
+          "semanticExact": 13,
+          "semanticInvalid": 0,
+          "parseableRate": 1.0,
+          "strictExactRate": 1.0,
+          "semanticExactRate": 1.0,
+          "semanticInvalidRate": 0.0
+        },
+        {
+          "category": "user-duration-surface",
+          "count": 2,
+          "parseable": 2,
+          "strictExact": 2,
+          "semanticExact": 2,
+          "semanticInvalid": 0,
+          "parseableRate": 1.0,
+          "strictExactRate": 1.0,
+          "semanticExactRate": 1.0,
+          "semanticInvalidRate": 0.0
+        },
+        {
+          "category": "user-generic-surface",
+          "count": 8,
+          "parseable": 8,
+          "strictExact": 8,
+          "semanticExact": 8,
+          "semanticInvalid": 0,
+          "parseableRate": 1.0,
+          "strictExactRate": 1.0,
+          "semanticExactRate": 1.0,
+          "semanticInvalidRate": 0.0
+        },
+        {
+          "category": "user-label-surface",
+          "count": 3,
+          "parseable": 3,
+          "strictExact": 3,
+          "semanticExact": 3,
+          "semanticInvalid": 0,
+          "parseableRate": 1.0,
+          "strictExactRate": 1.0,
+          "semanticExactRate": 1.0,
+          "semanticInvalidRate": 0.0
+        }
+      ],
+      "seconds": 5.816,
+      "predictions": "training/seq2seq-runs/phase4y-actions-browser-exact-dataset-step50-hard-eval/predictions-step-0.jsonl"
+    }
+  ]
+}

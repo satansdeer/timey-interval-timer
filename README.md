@@ -103,6 +103,14 @@ If the folder is not linked yet, create and link the site first:
 netlify sites:create --name timey-interval-timer
 ```
 
+Current production release:
+
+- App: https://timey-interval-timer.netlify.app
+- Netlify deploy id: `6a0ed36e0172c100ef1ab8ac`
+- Source tag: `timmy-t2-v0.1.0`
+- Model repo: https://huggingface.co/Satansdeer/timmy-t2
+- Dataset repo: https://huggingface.co/datasets/Satansdeer/timmy-t2-timer-sft
+
 ## Timer Semantics
 
 Running timers are derived from persisted wall-clock timestamps:
@@ -134,6 +142,19 @@ checkpoint exported as dynamic-q8 encoder plus q4 decoder ONNX. The model input 
 the raw request and shared lossless slot annotations, and the model emits Timey
 action commands such as `ADD A0`, `ALT C0 A4 A5`, or `SEQ3 I0 I1 I2`. The shared
 action parser expands those commands into timer objects.
+
+The public Timmy T2 release is:
+
+- **Timmy T2**: Timmy Timer Translator.
+- Hugging Face model: `Satansdeer/timmy-t2`.
+- Hugging Face dataset: `Satansdeer/timmy-t2-timer-sft`.
+- Release version: `v0.1.0`.
+- Runtime model version:
+  `phase4y-actions-browser-exact-checkpoint-50-dynq8enc-q4dec-ort-beam4`.
+- Browser artifact: dynamic-q8 encoder plus q4 decoder ONNX, 46,783,826 bytes
+  total.
+- Release gates: 207/207 validation, 62/62 hard validation, 16/16 hidden
+  validation, and 3/3 browser-regression prompts for the selected ONNX export.
 
 ## Update Caching
 
