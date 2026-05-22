@@ -35,6 +35,7 @@ npm run test:browser
 Run the opt-in real browser LLM test:
 
 ```sh
+npm run hydrate:browser-model
 npm run test:llm:real
 ```
 
@@ -88,6 +89,7 @@ local results.
 Deploy with the authenticated Netlify CLI from a clean static bundle:
 
 ```sh
+npm run hydrate:browser-model
 rm -rf /tmp/timey-netlify
 mkdir -p /tmp/timey-netlify/scripts/training
 cp index.html styles.css main.js assistant-session.js fallback-planner.js planner.js llm-planner.js service-worker.js manifest.webmanifest favicon.svg /tmp/timey-netlify/
@@ -128,7 +130,7 @@ The assistant uses a planner stack:
 - `assistant-session.js` is the shared DOM-free session layer used by both the web UI and console harness.
 - `timer-dsl.js` defines the timer shorthand grammar used by both human input and model output.
 - `scripts/training/timer-sft-lib.mjs` defines the shared action-slot prompt builder and action parser used by both training/eval and the browser runtime.
-- `llm-planner.js` loads the trained `timey-t5-efficient-tiny` seq2seq model from local `/models` assets. It uses Transformers.js for tokenization and raw ONNX Runtime Web for encoder/decoder inference.
+- `llm-planner.js` loads the trained `timey-t5-efficient-tiny` seq2seq model from local `/models` assets hydrated from Hugging Face. It uses Transformers.js for tokenization and raw ONNX Runtime Web for encoder/decoder inference.
 - `planner.js` chooses the tiny model path when the model is loaded, otherwise the deterministic backup.
 - `fallback-planner.js` is the deterministic backup for unsupported browsers, failed model loads, and correction requests. Successful model output is parsed as Timey action commands and validated before changing UI state.
 
@@ -155,6 +157,13 @@ The public Timmy T2 release is:
   total.
 - Release gates: 207/207 validation, 62/62 hard validation, 16/16 hidden
   validation, and 3/3 browser-regression prompts for the selected ONNX export.
+
+Model binaries are not tracked in git. Hydrate the local browser runtime assets
+from Hugging Face before running the real model tests or deploying:
+
+```sh
+npm run hydrate:browser-model
+```
 
 ## Update Caching
 

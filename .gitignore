@@ -20,6 +20,7 @@ coverage/
 playwright-report/
 test-results/
 release/huggingface/
+models/
 
 # Generated model-training artifacts. Existing tracked summaries remain tracked;
 # new raw runs should be archived deliberately before forcing them into git.

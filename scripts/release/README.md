@@ -2,6 +2,13 @@
 
 ## Hugging Face
 
+Model binaries are stored on Hugging Face, not in git. Hydrate the local
+browser runtime model directory before real browser tests or Netlify deploys:
+
+```sh
+npm run hydrate:browser-model
+```
+
 The Timmy T2 Hugging Face release is staged by:
 
 ```sh

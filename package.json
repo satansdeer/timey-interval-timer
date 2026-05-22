@@ -10,6 +10,7 @@
     "test:browser": "playwright test tests/browser",
     "test:llm:real": "TIMEY_REAL_TINY_MODEL=1 playwright test tests/browser/real-tiny-model.spec.mjs",
     "debug:tiny-model": "node scripts/debug-tiny-browser-model.mjs",
+    "hydrate:browser-model": "node scripts/release/hydrate-browser-model.mjs",
     "training:build": "node scripts/training/build-timer-sft.mjs --target-format dsl --user-format natural --dsl-end-token --out-dir training/generated-dsl-compressed-end",
     "training:validate": "node scripts/training/validate-timer-sft.mjs training/generated-dsl-compressed-end/timer-sft-train.jsonl training/generated-dsl-compressed-end/timer-sft-validation.jsonl",
     "training:eval": "node scripts/training/eval-timer-model.mjs",

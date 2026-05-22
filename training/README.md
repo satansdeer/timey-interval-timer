@@ -326,10 +326,17 @@ loads in ONNX Runtime Web.
 ## Browser Export
 
 The local browser model is a mixed dynamic-q8/q4 ONNX export of the current
-checkpoint:
+checkpoint. The files are hydrated from Hugging Face and intentionally ignored
+by git:
 
 ```text
 models/timey-t5-efficient-tiny/
+```
+
+Hydrate them with:
+
+```sh
+npm run hydrate:browser-model
 ```
 
 It contains tokenizer/config files at the model root and the two ONNX files used
