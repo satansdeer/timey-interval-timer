@@ -19,6 +19,7 @@ coverage/
 .nyc_output/
 playwright-report/
 test-results/
+release/huggingface/
 
 # Logs
 *.log
